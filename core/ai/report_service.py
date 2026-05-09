@@ -176,21 +176,8 @@ def generate_project_report(process_id: str, clearance_level: str = "INTERNAL") 
     prompt = build_prompt(full_context)
 
     client = GraniteClient()
-    try:
-        text = client.complete(prompt)
-        return text
-    except Exception as e:
-        log.error("Granite call failed for process %s: %s", process_id, e, exc_info=True)
-        return f"""# {p.name or "Project"} - Auto Report (Fallback)
-
-Granite unavailable. Minimal context below:
-
-- Mode: {p.mode}
-- Commodity: {p.commodity or "n/a"}
-- Documents: {len(bundle["docs"])}
-
-You can retry when the model service is reachable.
-"""
+    text = client.complete(prompt)
+    return text
 
 def save_report(process, organisation, title, content_md, user, reason="GENERATED", summary=""):
     import hashlib
