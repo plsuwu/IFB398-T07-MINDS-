@@ -1,39 +1,86 @@
 <div class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" id="drillhole-picker-overlay">
   <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
-    <h3 class="font-semibold text-lg mb-4">Link a Drillhole</h3>
-    <p class="text-sm text-gray-500 mb-4">Select a drillhole from this project to associate with this prospect.</p>
+    <div class="flex items-center justify-between mb-1">
+      <h3 class="font-semibold text-lg">Link Drillholes</h3>
+      <button onclick="document.getElementById('drillhole-picker-overlay').remove()"
+              class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+    </div>
+    <p class="text-sm text-gray-500 mb-4">Select one or more drillholes from this project to associate with this prospect.</p>
 
     {% if available_drillholes %}
-      <ul class="divide-y divide-gray-100 max-h-80 overflow-y-auto">
-        {% for dh in available_drillholes %}
-        <li class="py-3 flex items-center justify-between">
-          <div>
-            <p class="font-medium text-sm">{{ dh.name }}</p>
-            <p class="text-xs text-gray-400">{{ dh.get_drill_type_display|default:"Unknown type" }} · {{ dh.depth|default:"?" }}m</p>
-          </div>
-          <form hx-post="{% url 'link_drillhole' %}"
-                hx-target="#linked-drillholes"
-                hx-swap="outerHTML"
-                method="post">
-            {% csrf_token %}
-            <input type="hidden" name="drillhole_id" value="{{ dh.pk }}">
-            <input type="hidden" name="prospect_id" value="{{ prospect_id }}">
-            <button type="submit" class="px-3 py-1 bg-cyan-600 text-white text-xs rounded hover:bg-cyan-700">
-              Link
-            </button>
-          </form>
-        </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="text-gray-500 text-sm">No available drillholes in this project. Import drillholes first.</p>
-    {% endif %}
+      <form hx-post="{% url 'bulk_link_drillholes' %}"
+            hx-target="#linked-drillholes"
+            hx-swap="outerHTML"
+            hx-on::after-request="document.getElementById('drillhole-picker-overlay').remove()"
+            method="post">
+        {% csrf_token %}
+        <input type="hidden" name="prospect_id" value="{{ prospect_id }}">
 
-    <div class="mt-4 text-right">
-      <button onclick="document.getElementById('drillhole-picker-overlay').remove()"
-              class="text-sm text-gray-500 hover:text-gray-700">
-        Cancel
-      </button>
-    </div>
+        <!-- Select all toggle -->
+        <div class="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100">
+          <input type="checkbox" id="dh-select-all"
+                 class="rounded border-gray-300 text-cyan-600 cursor-pointer">
+          <label for="dh-select-all" class="text-xs text-gray-500 cursor-pointer select-none">Select all</label>
+          <span id="dh-selected-count" class="ml-auto text-xs text-gray-400"></span>
+        </div>
+
+        <ul class="divide-y divide-gray-100 max-h-80 overflow-y-auto mb-4">
+          {% for dh in available_drillholes %}
+          <li>
+            <label class="flex items-center gap-3 py-2.5 px-1 hover:bg-gray-50 cursor-pointer rounded">
+              <input type="checkbox" name="drillhole_id" value="{{ dh.pk }}"
+                     class="dh-checkbox rounded border-gray-300 text-cyan-600 cursor-pointer flex-shrink-0">
+              <div>
+                <p class="font-medium text-sm">{{ dh.name }}</p>
+                <p class="text-xs text-gray-400">{{ dh.get_drill_type_display|default:"Unknown type" }} · {{ dh.depth|default:"?" }}m</p>
+              </div>
+            </label>
+          </li>
+          {% endfor %}
+        </ul>
+
+        <div class="flex justify-end gap-3">
+          <button type="button"
+                  onclick="document.getElementById('drillhole-picker-overlay').remove()"
+                  class="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
+            Cancel
+          </button>
+          <button type="submit"
+                  class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700 font-medium">
+            Link Selected
+          </button>
+        </div>
+      </form>
+    {% else %}
+      <p class="text-gray-500 text-sm mb-6">No available drillholes in this project. Import drillholes first.</p>
+      <div class="text-right">
+        <button onclick="document.getElementById('drillhole-picker-overlay').remove()"
+                class="text-sm text-gray-500 hover:text-gray-700">
+          Close
+        </button>
+      </div>
+    {% endif %}
   </div>
 </div>
+
+<script>
+(function () {
+  const checkboxes = document.querySelectorAll('.dh-checkbox');
+  const selectAll  = document.getElementById('dh-select-all');
+  const countSpan  = document.getElementById('dh-selected-count');
+  if (!selectAll) return;
+
+  function updateCount() {
+    const n = [...checkboxes].filter(c => c.checked).length;
+    countSpan.textContent = n > 0 ? `${n} selected` : '';
+    selectAll.indeterminate = n > 0 && n < checkboxes.length;
+    selectAll.checked = checkboxes.length > 0 && n === checkboxes.length;
+  }
+
+  checkboxes.forEach(cb => cb.addEventListener('change', updateCount));
+  selectAll.addEventListener('change', () => {
+    checkboxes.forEach(cb => { cb.checked = selectAll.checked; });
+    updateCount();
+  });
+})();
+</script>

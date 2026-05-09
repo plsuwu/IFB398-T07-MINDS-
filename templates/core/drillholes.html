@@ -15,13 +15,19 @@
 {% if model_exists %}
   {% if page and page.object_list %}
     <div class="bg-white rounded-xl shadow overflow-hidden">
-      <table class="min-w-full divide-y divide-gray-200">
+      <table class="min-w-full divide-y divide-gray-200" id="drillhole-table">
         <thead class="bg-gray-50">
           <tr>
+            <th class="px-4 py-3 w-10">
+              <input type="checkbox" id="select-all-dh"
+                     class="rounded border-gray-300 text-cyan-600 cursor-pointer"
+                     title="Select all">
+            </th>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organisation</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Project</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prospect</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Depth (m)</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -29,11 +35,23 @@
         </thead>
         <tbody class="bg-white divide-y divide-gray-200">
           {% for drillhole in page.object_list %}
-            <tr class="hover:bg-gray-50">
+            <tr class="hover:bg-gray-50 drillhole-row" data-id="{{ drillhole.pk }}">
+              <td class="px-4 py-4">
+                <input type="checkbox" name="drillhole_ids" value="{{ drillhole.pk }}"
+                       class="dh-row-checkbox rounded border-gray-300 text-cyan-600 cursor-pointer">
+              </td>
               <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{{ drillhole.name }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ drillhole.drill_type|default:"—" }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ drillhole.organisation.name }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ drillhole.process.name }}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                {% if drillhole.prospect %}
+                  <a href="{% url 'prospect_detail' drillhole.prospect.pk %}"
+                     class="text-cyan-600 hover:underline">{{ drillhole.prospect.name }}</a>
+                {% else %}
+                  <span class="text-gray-400">—</span>
+                {% endif %}
+              </td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ drillhole.depth|default:"—" }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ drillhole.created_at|date:"M d, Y" }}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">
@@ -71,5 +89,82 @@
     <p class="text-yellow-700 text-sm">The Drillhole model is not yet available in the system.</p>
   </div>
 {% endif %}
+
+<!-- Floating bulk-action bar (hidden until rows selected) -->
+<div id="bulk-action-bar"
+     class="hidden fixed bottom-0 left-64 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
+  <form method="post" action="{% url 'bulk_assign_drillholes' %}" id="bulk-assign-form"
+        class="max-w-5xl mx-auto flex items-center gap-4 px-6 py-4">
+    {% csrf_token %}
+    <div id="bulk-hidden-ids"></div>
+    <span id="bulk-count" class="text-sm font-medium text-gray-700 whitespace-nowrap"></span>
+    <div class="flex-1"></div>
+    <label class="text-sm text-gray-600 whitespace-nowrap">Link to prospect:</label>
+    <select name="prospect_id" required
+            class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500 min-w-52">
+      <option value="">Select prospect...</option>
+      {% for prospect in prospects %}
+      <option value="{{ prospect.pk }}">{{ prospect.name }} — {{ prospect.process.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit"
+            class="px-4 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700 whitespace-nowrap">
+      Link Selected
+    </button>
+    <button type="button" id="btn-cancel-bulk"
+            class="px-4 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50 whitespace-nowrap">
+      Cancel
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const checkboxes  = document.querySelectorAll('.dh-row-checkbox');
+  const selectAllCb = document.getElementById('select-all-dh');
+  const bar         = document.getElementById('bulk-action-bar');
+  const countSpan   = document.getElementById('bulk-count');
+  const idsDiv      = document.getElementById('bulk-hidden-ids');
+
+  if (!checkboxes.length) return;
+
+  function syncBar() {
+    const checked = [...checkboxes].filter(cb => cb.checked);
+    if (checked.length > 0) {
+      bar.classList.remove('hidden');
+      countSpan.textContent = `${checked.length} drillhole${checked.length === 1 ? '' : 's'} selected`;
+      idsDiv.innerHTML = '';
+      checked.forEach(cb => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'drillhole_ids';
+        inp.value = cb.value;
+        idsDiv.appendChild(inp);
+      });
+    } else {
+      bar.classList.add('hidden');
+    }
+    if (selectAllCb) {
+      selectAllCb.indeterminate = checked.length > 0 && checked.length < checkboxes.length;
+      selectAllCb.checked = checked.length === checkboxes.length && checkboxes.length > 0;
+    }
+  }
+
+  checkboxes.forEach(cb => cb.addEventListener('change', syncBar));
+
+  if (selectAllCb) {
+    selectAllCb.addEventListener('change', () => {
+      checkboxes.forEach(cb => { cb.checked = selectAllCb.checked; });
+      syncBar();
+    });
+  }
+
+  document.getElementById('btn-cancel-bulk')?.addEventListener('click', () => {
+    checkboxes.forEach(cb => { cb.checked = false; });
+    if (selectAllCb) selectAllCb.checked = false;
+    syncBar();
+  });
+})();
+</script>
 
 {% endblock %}

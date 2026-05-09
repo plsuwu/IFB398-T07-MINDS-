@@ -146,6 +146,7 @@ class ProspectForm(ModelForm):
 
     def __init__(self, *args, organisation=None, initial_process=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self._organisation = organisation  # stored for _post_clean
         if organisation:
             self.fields["process"].queryset = Process.objects.filter(
                 organisation=organisation
@@ -154,3 +155,17 @@ class ProspectForm(ModelForm):
             self.fields["process"].initial = initial_process
         self.fields["process"].label = "Project"
         self.fields["process"].empty_label = "Select a project..."
+
+    def _post_clean(self):
+        from django.contrib.gis.geos import Point
+        # Pre-populate fields that are set by the view (not form fields) so that
+        # Prospect.save() → full_clean() (called with no exclusions) does not fail.
+        if self._organisation is not None:
+            self.instance.organisation = self._organisation
+        lat = (self.cleaned_data or {}).get("latitude")
+        lng = (self.cleaned_data or {}).get("longitude")
+        if lat is not None and lng is not None:
+            self.instance.geom = Point(float(lng), float(lat), srid=4326)
+        elif not self.instance.geom:
+            self.instance.geom = Point(0.0, 0.0, srid=4326)
+        super()._post_clean()

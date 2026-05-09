@@ -534,9 +534,22 @@ class SavedReport(models.Model):
         MANUAL_EDIT = "MANUAL_EDIT", _("Manual Edit")
         REGENERATED = "REGENERATED", _("Regenerated")
 
+    class Status(models.TextChoices):
+        DRAFT        = "DRAFT",        _("Draft")
+        UNDER_REVIEW = "UNDER_REVIEW", _("Under Review")
+        APPROVED     = "APPROVED",     _("Approved")
+        PUBLISHED    = "PUBLISHED",    _("Published")
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     process = models.ForeignKey(
         Process, on_delete=models.SET_NULL, null=True, blank=True, related_name="saved_reports"
+    )
+    prospect = models.ForeignKey(
+        'Prospect',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reports',
     )
     organisation = models.ForeignKey(
         Organisation, on_delete=models.SET_NULL, null=True, blank=True
@@ -566,6 +579,11 @@ class SavedReport(models.Model):
     parent_version = models.ForeignKey(
         'self', null=True, blank=True, on_delete=models.SET_NULL, related_name='child_versions'
     )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.DRAFT,
+    )
 
     class Meta:
         db_table = "saved_reports"
@@ -585,6 +603,7 @@ class SavedReport(models.Model):
 
         return cls.objects.create(
             process=parent.process,
+            prospect=parent.prospect,
             organisation=parent.organisation,
             title=parent.title,
             content_md=content_md,
