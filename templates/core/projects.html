@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+{% load static %}
+
+<div class="mb-6 flex items-start justify-between">
+  <div>
+    <h1 class="text-3xl font-bold">📁 Projects</h1>
+    <p class="text-gray-600 mt-2">Exploration and mining projects</p>
+  </div>
+  <a href="/admin/core/process/add/" class="px-4 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700">
+    + Add Project
+  </a>
+</div>
+
+{% if page and page.object_list %}
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    {% for project in page.object_list %}
+      <a href="{% url 'project_detail' project.pk %}" class="block bg-white rounded-xl shadow hover:shadow-lg transition p-6 group">
+        <div class="flex items-start justify-between mb-3">
+          <h3 class="font-semibold text-lg group-hover:text-cyan-700 transition">{{ project.name }}</h3>
+          <span class="ml-2 px-2 py-1 text-xs rounded-full font-medium
+            {% if project.mode == 'PROJECT' %}bg-cyan-100 text-cyan-700{% else %}bg-orange-100 text-orange-700{% endif %}">
+            {% if project.mode == 'PROJECT' %}Exploration{% else %}Mining{% endif %}
+          </span>
+        </div>
+
+        <div class="text-sm text-gray-600 space-y-1 mb-4">
+          <p>🏢 {{ project.organisation.name }}</p>
+          {% if project.commodity %}
+            <p>⛏️ {{ project.commodity }}</p>
+          {% endif %}
+          <p>📅 {{ project.created_at|date:"M d, Y" }}</p>
+        </div>
+
+        <!-- Entity counts -->
+        <div class="flex gap-4 text-xs text-gray-500 border-t pt-3 mt-3">
+          <span>💎 {{ project.prospect_count }} Prospects</span>
+          <span>🧱 {{ project.drillhole_count }} Drillholes</span>
+          <span>📄 {{ project.document_count }} Docs</span>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+
+  {% if page.has_other_pages %}
+    <div class="mt-8 flex justify-center gap-2">
+      {% if page.has_previous %}
+        <a href="?page={{ page.previous_page_number }}" class="px-4 py-2 border rounded-lg hover:bg-gray-50">Previous</a>
+      {% endif %}
+      <span class="px-4 py-2 bg-cyan-100 text-cyan-700 rounded-lg">
+        Page {{ page.number }} of {{ page.paginator.num_pages }}
+      </span>
+      {% if page.has_next %}
+        <a href="?page={{ page.next_page_number }}" class="px-4 py-2 border rounded-lg hover:bg-gray-50">Next</a>
+      {% endif %}
+    </div>
+  {% endif %}
+
+{% else %}
+  <div class="bg-white rounded-xl shadow p-12 text-center">
+    <p class="text-gray-500 text-lg mb-4">No projects found</p>
+    <a href="/admin/core/process/add/" class="inline-block px-6 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700">
+      + Add Project
+    </a>
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block content %}
+{% load static %}
+
+<!-- Breadcrumb -->
+<div class="mb-4 text-sm text-gray-600">
+  <a href="{% url 'projects' %}" class="hover:text-cyan-600">Projects</a>
+  <span class="mx-2">/</span>
+  <span class="text-gray-900">{{ process.name }}</span>
+</div>
+
+<!-- Header Card -->
+<div class="bg-white rounded-xl shadow-lg overflow-hidden mb-6">
+  <div class="bg-gradient-to-r from-cyan-600 to-blue-600 text-white p-6">
+    <div class="flex items-start justify-between">
+      <div>
+        <h1 class="text-3xl font-bold mb-1">📁 {{ process.name }}</h1>
+        <p class="text-cyan-100 text-sm">{{ process.organisation.name }}</p>
+      </div>
+      <span class="px-3 py-1 rounded-full text-sm font-semibold
+        {% if process.mode == 'PROJECT' %}bg-cyan-200 text-cyan-900{% else %}bg-orange-200 text-orange-900{% endif %}">
+        {% if process.mode == 'PROJECT' %}Exploration{% else %}Mining{% endif %}
+      </span>
+    </div>
+  </div>
+
+  <div class="p-6 border-b grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+    {% if process.commodity %}
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Commodity</p>
+      <p class="font-medium">{{ process.commodity }}</p>
+    </div>
+    {% endif %}
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Spatial Boundary</p>
+      <p class="font-medium {% if not process.geom %}text-yellow-600{% endif %}">
+        {% if process.geom %}Mapped{% else %}Not mapped{% endif %}
+      </p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Created</p>
+      <p class="font-medium">{{ process.created_at|date:"M d, Y" }}</p>
+    </div>
+  </div>
+
+  <!-- Stats bar -->
+  <div class="px-6 py-4 bg-gray-50 flex flex-wrap gap-6 text-sm text-gray-600">
+    <span class="font-medium text-cyan-700">{{ prospects.count }} Prospects</span>
+    <span class="font-medium text-gray-700">{{ drillholes.count }} Drillholes</span>
+    <span class="font-medium text-gray-700">{{ tenements.count }} Tenements</span>
+    <span class="font-medium text-gray-700">{{ documents_total }} Documents</span>
+  </div>
+</div>
+
+<!-- Prospects Section -->
+<div class="bg-white rounded-xl shadow mb-6 overflow-hidden">
+  <div class="px-6 py-4 border-b flex items-center justify-between">
+    <h2 class="text-lg font-semibold">💎 Prospects</h2>
+    <a href="/admin/core/prospect/add/?process={{ process.pk }}"
+       class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+      + Add Prospect
+    </a>
+  </div>
+  {% if prospects %}
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-left text-gray-500 border-b">
+        <tr>
+          <th class="px-6 py-3">Name</th>
+          <th class="px-6 py-3">Hypothesis</th>
+          <th class="px-6 py-3">Created</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for prospect in prospects %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-6 py-3">
+            <a href="{% url 'prospect_detail' prospect.pk %}" class="text-cyan-700 hover:underline font-medium">
+              {{ prospect.name }}
+            </a>
+          </td>
+          <td class="px-6 py-3 text-gray-500">{{ prospect.hypothesis|truncatechars:80 }}</td>
+          <td class="px-6 py-3 text-gray-400">{{ prospect.created_at|date:"M d, Y" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="px-6 py-8 text-center text-gray-400 text-sm">
+      No prospects yet.
+      <a href="/admin/core/prospect/add/?process={{ process.pk }}" class="text-cyan-600 hover:underline ml-1">Add the first one.</a>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Drillholes Section -->
+<div class="bg-white rounded-xl shadow mb-6 overflow-hidden">
+  <div class="px-6 py-4 border-b flex items-center justify-between">
+    <h2 class="text-lg font-semibold">🧱 Drillholes</h2>
+    <a href="{% url 'drillhole_import' %}"
+       class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+      Import Drillholes
+    </a>
+  </div>
+  {% if drillholes %}
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-left text-gray-500 border-b">
+        <tr>
+          <th class="px-6 py-3">Name</th>
+          <th class="px-6 py-3">Type</th>
+          <th class="px-6 py-3">Depth (m)</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for dh in drillholes %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-6 py-3">
+            <a href="{% url 'drillhole_detail' dh.pk %}" class="text-cyan-700 hover:underline font-medium">
+              {{ dh.name }}
+            </a>
+          </td>
+          <td class="px-6 py-3 text-gray-500">{{ dh.get_drill_type_display|default:"—" }}</td>
+          <td class="px-6 py-3 text-gray-500">{{ dh.depth|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="px-6 py-8 text-center text-gray-400 text-sm">
+      No drillholes imported yet.
+    </div>
+  {% endif %}
+</div>
+
+<!-- Tenements Section -->
+<div class="bg-white rounded-xl shadow mb-6 overflow-hidden">
+  <div class="px-6 py-4 border-b">
+    <h2 class="text-lg font-semibold">🗺️ Tenements</h2>
+  </div>
+  {% if tenements %}
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-left text-gray-500 border-b">
+        <tr>
+          <th class="px-6 py-3">Name</th>
+          <th class="px-6 py-3">Geometry</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for t in tenements %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-6 py-3 font-medium text-gray-800">{{ t.name }}</td>
+          <td class="px-6 py-3 text-gray-400">
+            {% if t.geom %}Mapped{% else %}Not mapped{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="px-6 py-8 text-center text-gray-400 text-sm">No tenements linked.</div>
+  {% endif %}
+</div>
+
+<!-- Documents Section -->
+<div class="bg-white rounded-xl shadow mb-6 overflow-hidden">
+  <div class="px-6 py-4 border-b flex items-center justify-between">
+    <h2 class="text-lg font-semibold">📄 Documents</h2>
+    <a href="{% url 'upload' %}" class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+      Upload Document
+    </a>
+  </div>
+  {% if documents %}
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-left text-gray-500 border-b">
+        <tr>
+          <th class="px-6 py-3">Title</th>
+          <th class="px-6 py-3">Type</th>
+          <th class="px-6 py-3">Date</th>
+          <th class="px-6 py-3">Confidentiality</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for doc in documents %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-6 py-3">
+            <a href="{% url 'document_detail' doc.pk %}" class="text-cyan-700 hover:underline font-medium">
+              {{ doc.title }}
+            </a>
+          </td>
+          <td class="px-6 py-3 text-gray-500">{{ doc.doc_type|default:"—" }}</td>
+          <td class="px-6 py-3 text-gray-400">{{ doc.created_at|date:"M d, Y" }}</td>
+          <td class="px-6 py-3">
+            <span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+              {{ doc.confidentiality|default:"internal" }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if documents_total > 10 %}
+      <div class="px-6 py-3 border-t text-sm">
+        <a href="{% url 'documents' %}?process={{ process.pk }}" class="text-cyan-600 hover:underline">
+          View all {{ documents_total }} documents →
+        </a>
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="px-6 py-8 text-center text-gray-400 text-sm">No documents uploaded yet.</div>
+  {% endif %}
+</div>
+
+<!-- Reports Section -->
+<div class="bg-white rounded-xl shadow overflow-hidden">
+  <div class="px-6 py-4 border-b flex items-center justify-between">
+    <h2 class="text-lg font-semibold">📊 Reports</h2>
+    <form method="post" action="{% url 'generate_report' %}" class="inline">
+      {% csrf_token %}
+      <input type="hidden" name="process_id" value="{{ process.pk }}">
+      <button type="submit" class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+        Generate Report
+      </button>
+    </form>
+  </div>
+  {% if reports %}
+    <ul class="divide-y divide-gray-100">
+      {% for report in reports %}
+      <li class="px-6 py-4 flex items-center justify-between hover:bg-gray-50">
+        <div>
+          <a href="{% url 'saved_report_editor' report.pk %}" class="font-medium text-cyan-700 hover:underline">
+            {{ report.title }}
+          </a>
+          <p class="text-xs text-gray-400 mt-0.5">
+            v{{ report.version_number }} · {{ report.created_at|date:"M d, Y" }}
+            {% if report.created_by %} · by {{ report.created_by.username }}{% endif %}
+          </p>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="px-6 py-8 text-center text-gray-400 text-sm">No reports generated yet.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

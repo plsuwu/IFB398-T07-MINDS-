@@ -2,54 +2,6 @@
 {% block title %}Upload{% endblock %}
 {% block content %}
 {% load static %}
-<div class="flex min-h-[70vh] gap 6">
-
-  <!-- 🌐 Sidebar -->
-  <aside class="w-64 bg-white shadow-md hidden md:flex flex-col">
-    <div class="px-4 py-3 border-b flex items-center gap-3">
-      <img src="{% static 'img/logo.png' %}" alt="OreFox" class="h-14 w-14 object-contain translate-y-2.5">
-      <span class="text-xl font-semibold text-cyan-600">OreFox KMS</span>
-    </div>
-    <nav class="flex-1 p-4 space-y-2">
-      <a href="{% url 'dashboard' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium {% if request.resolver_match.url_name == 'dashboard' %}bg-cyan-100{% endif %}">
-        🏠 <span>Dashboard</span>
-      </a>
-      <a href="{% url 'documents' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        📄 <span>Documents</span>
-      </a>
-      <a href="{% url 'prospects' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        💎 <span>Prospects</span>
-      </a>
-      <a href="{% url 'drillholes' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🧱 <span>Drillholes</span>
-      </a>
-      <a href="{% url 'tenements' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🗺️ <span>Tenements</span>
-      </a>
-      <a href="{% url 'ai_insights' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        📊 <span>Reporting</span>
-      </a>
-      <a href="{% url 'document_analysis_page' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🔍 <span>Document Analysis</span>
-      </a>
-      <a href="{% url 'map_view' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🗺️ <span>Map</span>
-      </a>
-    </nav>
-    <!-- User section -->
-    <div class="p-4 border-t text-sm text-gray-600 flex flex-col gap-3">
-      <div>Logged in as <span class="font-medium">{{ request.user.username }}</span></div>
-      
-      <!-- Admin button -->
-      <a href="/admin/"
-         class="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-cyan-600 rounded-lg hover:bg-cyan-700 transition">
-        ⚙️ Admin Panel
-      </a>
-    </div>
-  </aside>
-
-  <!-- Main -->
-  <main class="flex-1 p-6 bg-gray-50">
 
     <!-- Header / Status -->
     <div class="mb-4 flex items-center justify-between">
@@ -158,9 +110,6 @@
         {% endfor %}
       </ul>
     </div>
-
-  </main>
-</div>
 
 <!-- Tiny progressive enhancement (no framework) -->
 <script>

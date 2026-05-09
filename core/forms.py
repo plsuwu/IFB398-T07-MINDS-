@@ -114,22 +114,43 @@ class DocumentSearchForm(forms.Form):
 
 
 class ProspectForm(ModelForm):
+    latitude = forms.DecimalField(
+        max_digits=10, decimal_places=7, required=True,
+        widget=forms.HiddenInput(),
+        error_messages={"required": "A mapped location is required. Click on the map to place a pin."}
+    )
+    longitude = forms.DecimalField(
+        max_digits=10, decimal_places=7, required=True,
+        widget=forms.HiddenInput(),
+    )
+
     class Meta:
         model = Prospect
-        fields = ["name", "organisation", "process", "hypothesis", "objective"]
+        fields = ["name", "process", "hypothesis", "objective"]
         widgets = {
             "name": forms.TextInput(attrs={
                 "class": "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 text-sm",
-                "placeholder": "Prospect name",
+                "placeholder": "e.g. Ridgeline East",
             }),
             "hypothesis": forms.Textarea(attrs={
-                "rows": 4,
+                "rows": 5,
                 "class": "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 text-sm",
-                "placeholder": "Describe the geological hypothesis for this prospect...",
+                "placeholder": "Describe the geological hypothesis. What do you believe is here and why?",
             }),
             "objective": forms.Textarea(attrs={
-                "rows": 3,
+                "rows": 4,
                 "class": "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 text-sm",
-                "placeholder": "State the exploration objective...",
+                "placeholder": "State the exploration objective. What will you do to test the hypothesis?",
             }),
         }
+
+    def __init__(self, *args, organisation=None, initial_process=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if organisation:
+            self.fields["process"].queryset = Process.objects.filter(
+                organisation=organisation
+            ).order_by("name")
+        if initial_process:
+            self.fields["process"].initial = initial_process
+        self.fields["process"].label = "Project"
+        self.fields["process"].empty_label = "Select a project..."

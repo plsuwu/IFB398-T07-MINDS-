@@ -1,94 +1,46 @@
 {% extends "base.html" %}
 {% block content %}
 {% load static %}
-<div class="flex min-h-screen">
 
-  <!-- 🌐 Sidebar -->
-  <aside class="w-64 bg-white shadow-md hidden md:flex flex-col">
-    <div class="px-4 py-3 border-b flex items-center gap-3">
-      <img src="{% static 'img/logo.png' %}" alt="OreFox" class="h-14 w-14 object-contain translate-y-2.5">
-      <span class="text-xl font-semibold text-cyan-600">OreFox KMS</span>
-    </div>
-    <nav class="flex-1 p-4 space-y-2">
-      <a href="{% url 'dashboard' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium {% if request.resolver_match.url_name == 'dashboard' %}bg-cyan-100{% endif %}">
-        🏠 <span>Dashboard</span>
-      </a>
-      <a href="{% url 'documents' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        📄 <span>Documents</span>
-      </a>
-      <a href="{% url 'prospects' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        💎 <span>Prospects</span>
-      </a>
-      <a href="{% url 'drillholes' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🧱 <span>Drillholes</span>
-      </a>
-      <a href="{% url 'tenements' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🗺️ <span>Tenements</span>
-      </a>
-      <a href="{% url 'ai_insights' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        📊 <span>Reporting</span>
-      </a>
-      <a href="{% url 'document_analysis_page' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🔍 <span>Document Analysis</span>
-      </a>
-      <a href="{% url 'map_view' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🗺️ <span>Map</span>
-      </a>
-    </nav>
-    <!-- User section -->
-    <div class="p-4 border-t text-sm text-gray-600 flex flex-col gap-3">
-      <div>Logged in as <span class="font-medium">{{ request.user.username }}</span></div>
-      
-      <!-- Admin button -->
-      <a href="/admin/"
-         class="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-cyan-600 rounded-lg hover:bg-cyan-700 transition">
-        ⚙️ Admin Panel
-      </a>
-    </div>
-  </aside>
-
-  <!-- 🧩 Main Content -->
-  <main class="flex-1 p-6 bg-gray-50">
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-      <div class="bg-white rounded-xl p-5 shadow">
-        <p class="text-sm text-gray-500">Projects</p>
-        <p class="text-3xl font-bold text-cyan-400">{{ metrics.project_count }}</p>
-      </div>
-      <div class="bg-white rounded-xl p-5 shadow">
-        <p class="text-sm text-gray-500">Documents</p>
-        <p class="text-3xl font-bold text-cyan-400">{{ metrics.document_count }}</p>
-      </div>
-      <div class="bg-white rounded-xl p-5 shadow">
-        <p class="text-sm text-gray-500">Prospects</p>
-        <p class="text-3xl font-bold text-cyan-400">{{ metrics.prospect_count }}</p>
-      </div>
-      <div class="bg-white rounded-xl p-5 shadow">
-        <p class="text-sm text-gray-500">Drillholes</p>
-        <p class="text-3xl font-bold text-cyan-400">{{ metrics.drillhole_count }}</p>
-      </div>
-      <div class="bg-white rounded-xl p-5 shadow">
-        <p class="text-sm text-gray-500">Tenements</p>
-        <p class="text-3xl font-bold text-cyan-400">{{ metrics.tenement_count }}</p>
-      </div>
-    </div>
-
-    <!-- 📋 Recent Documents -->
-    <div class="bg-white rounded-xl shadow">
-      <div class="p-4 border-b flex items-center justify-between">
-        <h3 class="font-semibold">Recent Documents</h3>
-        <a href="{% url 'upload' %}" class="text-sm text-cyan-600 hover:underline">Upload new</a>
-      </div>
-      <ul class="divide-y">
-        {% for d in recent_docs %}
-          <li class="p-4 flex items-center justify-between hover:bg-gray-50">
-            <span class="truncate">{{ d.title }}</span>
-            <span class="text-xs text-gray-400">{{ d.created_at|date:"M d, Y" }}</span>
-          </li>
-        {% empty %}
-          <li class="p-4 text-gray-500">No documents yet.</li>
-        {% endfor %}
-      </ul>
-    </div>
-  </main>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+  <div class="bg-white rounded-xl p-5 shadow">
+    <p class="text-sm text-gray-500">Projects</p>
+    <p class="text-3xl font-bold text-cyan-400">{{ metrics.project_count }}</p>
+  </div>
+  <div class="bg-white rounded-xl p-5 shadow">
+    <p class="text-sm text-gray-500">Documents</p>
+    <p class="text-3xl font-bold text-cyan-400">{{ metrics.document_count }}</p>
+  </div>
+  <div class="bg-white rounded-xl p-5 shadow">
+    <p class="text-sm text-gray-500">Prospects</p>
+    <p class="text-3xl font-bold text-cyan-400">{{ metrics.prospect_count }}</p>
+  </div>
+  <div class="bg-white rounded-xl p-5 shadow">
+    <p class="text-sm text-gray-500">Drillholes</p>
+    <p class="text-3xl font-bold text-cyan-400">{{ metrics.drillhole_count }}</p>
+  </div>
+  <div class="bg-white rounded-xl p-5 shadow">
+    <p class="text-sm text-gray-500">Tenements</p>
+    <p class="text-3xl font-bold text-cyan-400">{{ metrics.tenement_count }}</p>
+  </div>
 </div>
+
+<!-- 📋 Recent Documents -->
+<div class="bg-white rounded-xl shadow">
+  <div class="p-4 border-b flex items-center justify-between">
+    <h3 class="font-semibold">Recent Documents</h3>
+    <a href="{% url 'upload' %}" class="text-sm text-cyan-600 hover:underline">Upload new</a>
+  </div>
+  <ul class="divide-y">
+    {% for d in recent_docs %}
+      <li class="p-4 flex items-center justify-between hover:bg-gray-50">
+        <span class="truncate">{{ d.title }}</span>
+        <span class="text-xs text-gray-400">{{ d.created_at|date:"M d, Y" }}</span>
+      </li>
+    {% empty %}
+      <li class="p-4 text-gray-500">No documents yet.</li>
+    {% endfor %}
+  </ul>
+</div>
+
 {% endblock %}

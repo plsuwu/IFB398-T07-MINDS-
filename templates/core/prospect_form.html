@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block head_extra %}
+<link href="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<!-- Breadcrumb -->
+<div class="mb-4 text-sm text-gray-600">
+  <a href="{% url 'prospects' %}" class="hover:text-cyan-600">Prospects</a>
+  <span class="mx-2">/</span>
+  {% if editing %}
+    <a href="{% url 'prospect_detail' prospect.pk %}" class="hover:text-cyan-600">{{ prospect.name }}</a>
+    <span class="mx-2">/</span>
+    <span class="text-gray-900">Edit</span>
+  {% else %}
+    <span class="text-gray-900">New Prospect</span>
+  {% endif %}
+</div>
+
+<div class="max-w-2xl">
+  <h1 class="text-3xl font-bold mb-6">
+    {% if editing %}Edit Prospect: {{ prospect.name }}{% else %}Create Prospect{% endif %}
+  </h1>
+
+  <div class="bg-white rounded-xl shadow p-6">
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      <!-- Non-field errors -->
+      {% if form.non_field_errors %}
+        <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          {% for error in form.non_field_errors %}
+            <p class="text-red-600 text-sm">{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <!-- Name -->
+      <div class="mb-5">
+        <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">
+          Prospect Name <span class="text-red-500">*</span>
+        </label>
+        {{ form.name }}
+        {% for error in form.name.errors %}
+          <p class="text-red-600 text-sm mt-1">{{ error }}</p>
+        {% endfor %}
+      </div>
+
+      <!-- Project -->
+      <div class="mb-5">
+        <label for="{{ form.process.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">
+          Project <span class="text-red-500">*</span>
+        </label>
+        <select name="process" id="{{ form.process.id_for_label }}"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 text-sm">
+          <option value="">Select a project...</option>
+          {% for value, label in form.process.field.choices %}
+            {% if value %}
+              <option value="{{ value }}"
+                {% if form.process.value|stringformat:"s" == value|stringformat:"s" %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endif %}
+          {% endfor %}
+        </select>
+        {% for error in form.process.errors %}
+          <p class="text-red-600 text-sm mt-1">{{ error }}</p>
+        {% endfor %}
+      </div>
+
+      <!-- Hypothesis -->
+      <div class="mb-5">
+        <label for="{{ form.hypothesis.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">
+          Geological Hypothesis <span class="text-red-500">*</span>
+        </label>
+        {{ form.hypothesis }}
+        {% for error in form.hypothesis.errors %}
+          <p class="text-red-600 text-sm mt-1">{{ error }}</p>
+        {% endfor %}
+      </div>
+
+      <!-- Objective -->
+      <div class="mb-5">
+        <label for="{{ form.objective.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">
+          Exploration Objective <span class="text-red-500">*</span>
+        </label>
+        {{ form.objective }}
+        {% for error in form.objective.errors %}
+          <p class="text-red-600 text-sm mt-1">{{ error }}</p>
+        {% endfor %}
+      </div>
+
+      <!-- Mini-map location picker -->
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          Location <span class="text-red-500">*</span>
+          <span class="font-normal text-gray-500">— click on the map to place a pin</span>
+        </label>
+        <div id="prospect-map" class="rounded-lg border border-gray-300" style="height: 350px;"></div>
+        <p id="location-display" class="text-sm text-gray-500 mt-2">
+          {% if editing and prospect.geom %}
+            {{ initial_lat|floatformat:5 }}°, {{ initial_lng|floatformat:5 }}°
+          {% else %}
+            No location selected
+          {% endif %}
+        </p>
+        {{ form.latitude }}
+        {{ form.longitude }}
+        {% for error in form.latitude.errors %}
+          <p class="text-red-600 text-sm mt-1">{{ error }}</p>
+        {% endfor %}
+      </div>
+
+      <!-- Actions -->
+      <div class="flex items-center gap-4">
+        <button type="submit"
+                class="px-6 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700">
+          Save Prospect
+        </button>
+        {% if editing %}
+          <a href="{% url 'prospect_detail' prospect.pk %}" class="text-sm text-gray-500 hover:text-gray-700">
+            Cancel
+          </a>
+        {% else %}
+          <a href="{% url 'prospects' %}" class="text-sm text-gray-500 hover:text-gray-700">
+            Cancel
+          </a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const map = new maplibregl.Map({
+    container: 'prospect-map',
+    style: {
+        version: 8,
+        sources: {
+            'satellite': {
+                type: 'raster',
+                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+                tileSize: 256,
+                attribution: '© Esri, Maxar, Earthstar Geographics'
+            },
+            'labels': {
+                type: 'raster',
+                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'],
+                tileSize: 256,
+                attribution: '© Esri'
+            }
+        },
+        layers: [
+            { id: 'satellite-layer', type: 'raster', source: 'satellite', minzoom: 0, maxzoom: 22 },
+            { id: 'labels-layer',    type: 'raster', source: 'labels',    minzoom: 0, maxzoom: 22 }
+        ]
+    },
+    // MapLibre centre order is [lng, lat]
+    center: [{{ initial_lng }}, {{ initial_lat }}],
+    zoom: {{ initial_zoom }}
+});
+
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+// Always show crosshair so the click intent is obvious
+map.on('load', () => {
+    map.getCanvas().style.cursor = 'crosshair';
+});
+
+let marker = null;
+
+{% if editing and prospect.geom %}
+// Pre-place marker for existing location
+map.on('load', () => {
+    marker = new maplibregl.Marker({ color: '#0e7490' })
+        .setLngLat([{{ initial_lng }}, {{ initial_lat }}])
+        .addTo(map);
+});
+document.getElementById('id_latitude').value  = '{{ initial_lat }}';
+document.getElementById('id_longitude').value = '{{ initial_lng }}';
+{% endif %}
+
+map.on('click', (e) => {
+    const lat = e.lngLat.lat.toFixed(7);
+    const lng = e.lngLat.lng.toFixed(7);
+    if (marker) marker.remove();
+    marker = new maplibregl.Marker({ color: '#0e7490' })
+        .setLngLat([parseFloat(lng), parseFloat(lat)])
+        .addTo(map);
+    document.getElementById('id_latitude').value  = lat;
+    document.getElementById('id_longitude').value = lng;
+    document.getElementById('location-display').textContent = lat + '°, ' + lng + '°';
+});
+</script>
+
+{% endblock %}
