@@ -34,7 +34,8 @@ import re, io
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.postgres.search import SearchQuery, SearchRank
 from .forms import DocumentForm, DocumentSearchForm
-from .models import Document, Process, SavedReport, AuditLog, log_audit, Prospect, DocLink, UserProfile
+from .models import Document, Process, SavedReport, AuditLog, log_audit, Prospect, DocLink, UserProfile, Drillhole, DrillholeSurvey, LithologyInterval, AssayResult, Organisation
+from .importers import run_drillhole_import
 from .permissions import role_required, clearance_required, log_view_access
 from .utils import sha256_file, extract_text, chunk_text
 
@@ -668,6 +669,83 @@ def drillholes(request):
 
 @login_required
 @require_GET
+def drillhole_detail(request, pk):
+    drillhole = get_object_or_404(Drillhole, pk=pk)
+    if not request.user.is_superuser:
+        if (
+            hasattr(request.user, "profile")
+            and request.user.profile.organisation
+            and drillhole.organisation
+            and drillhole.organisation != request.user.profile.organisation
+        ):
+            raise PermissionDenied
+    surveys = DrillholeSurvey.objects.filter(drillhole=drillhole).order_by("depth")
+    lithology = LithologyInterval.objects.filter(drillhole=drillhole).order_by("from_depth")
+    assays = AssayResult.objects.filter(drillhole=drillhole).order_by("from_depth")
+    return render(request, "core/drillhole_detail.html", {
+        "drillhole": drillhole,
+        "surveys":   surveys,
+        "lithology": lithology,
+        "assays":    assays,
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def drillhole_import(request):
+    if not request.user.is_superuser:
+        profile = getattr(request.user, "profile", None)
+        allowed = (UserProfile.RoleChoices.DATA_MANAGER, UserProfile.RoleChoices.ADMIN)
+        if not profile or profile.role not in allowed:
+            raise PermissionDenied
+
+    org_filter = _org_qs_filter(request)
+    organisations = Organisation.objects.filter(org_filter).order_by("name")
+    processes     = Process.objects.filter(org_filter).select_related("organisation").order_by("name")
+
+    context = {"organisations": organisations, "processes": processes}
+
+    if request.method == "POST":
+        file    = request.FILES.get("file")
+        org_id  = request.POST.get("organisation", "").strip()
+        proc_id = request.POST.get("process", "").strip()
+        dry_run = request.POST.get("dry_run") == "on"
+        update  = request.POST.get("update") == "on"
+
+        form_errors = []
+        if not file:
+            form_errors.append("No file selected.")
+        if not org_id:
+            form_errors.append("No organisation selected.")
+        if not proc_id:
+            form_errors.append("No process selected.")
+
+        if not form_errors:
+            try:
+                org     = Organisation.objects.get(pk=org_id)
+                process = Process.objects.get(pk=proc_id, organisation=org)
+                result  = run_drillhole_import(
+                    file, org=org, process=process, dry_run=dry_run, update=update
+                )
+                context.update({
+                    "result":       result,
+                    "counters":     result["counters"],
+                    "import_errors": result["errors"],
+                    "dry_run":      dry_run,
+                    "selected_org":  org_id,
+                    "selected_proc": proc_id,
+                })
+            except Exception as e:
+                log.error("Drillhole import failed: %s", e, exc_info=True)
+                form_errors.append(str(e))
+
+        context["form_errors"] = form_errors
+
+    return render(request, "core/drillhole_import.html", context)
+
+
+@login_required
+@require_GET
 def tenements(request):
     Tenement = _get_model("core", "Tenement")
     if Tenement:
@@ -731,7 +809,11 @@ def project_report_pdf(request, process_id: str):
         raise Http404("Project not found")
 
     clearance_level = _get_clearance_level(request)
-    md_text = _get_cached_report_md(process_id, clearance_level)
+    try:
+        md_text = _get_cached_report_md(process_id, clearance_level)
+    except Exception as e:
+        log.error("PDF export failed for process %s: %s", process_id, e)
+        return HttpResponse("Report generation failed: Granite model unavailable.", status=503, content_type="text/plain")
     process = Process.objects.get(pk=process_id)
 
     buf = io.BytesIO()
@@ -780,7 +862,11 @@ def project_report_docx(request, process_id: str):
         raise Http404("Project not found")
 
     clearance_level = _get_clearance_level(request)
-    md_text = _get_cached_report_md(process_id, clearance_level)
+    try:
+        md_text = _get_cached_report_md(process_id, clearance_level)
+    except Exception as e:
+        log.error("DOCX export failed for process %s: %s", process_id, e)
+        return HttpResponse("Report generation failed: Granite model unavailable.", status=503, content_type="text/plain")
     process = Process.objects.get(pk=process_id)
 
     doc = DocxDocument()

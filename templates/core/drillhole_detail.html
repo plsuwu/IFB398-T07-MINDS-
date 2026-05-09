@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block content %}
+{% load static %}
+<div class="flex min-h-screen">
+
+  <!-- Sidebar -->
+  <aside class="w-64 bg-white shadow-md hidden md:flex flex-col">
+    <div class="px-4 py-3 border-b flex items-center gap-3">
+      <img src="{% static 'img/logo.png' %}" alt="OreFox" class="h-14 w-14 object-contain translate-y-2.5">
+      <span class="text-xl font-semibold text-cyan-600">OreFox KMS</span>
+    </div>
+    <nav class="flex-1 p-4 space-y-2">
+      <a href="{% url 'dashboard' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
+        🏠 <span>Dashboard</span>
+      </a>
+      <a href="{% url 'documents' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
+        📄 <span>Documents</span>
+      </a>
+      <a href="{% url 'prospects' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
+        💎 <span>Prospects</span>
+      </a>
+      <a href="{% url 'drillholes' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium bg-cyan-100">
+        🧱 <span>Drillholes</span>
+      </a>
+      <a href="{% url 'tenements' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
+        🗺️ <span>Tenements</span>
+      </a>
+      <a href="{% url 'ai_insights' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
+        📊 <span>Reporting</span>
+      </a>
+      <a href="{% url 'document_analysis_page' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
+        🔍 <span>Document Analysis</span>
+      </a>
+      <a href="{% url 'map_view' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
+        🗺️ <span>Map</span>
+      </a>
+    </nav>
+    <div class="p-4 border-t">
+      <a href="/admin/" class="block text-center px-4 py-2 text-sm font-semibold text-white bg-cyan-600 rounded-lg hover:bg-cyan-700">
+        ⚙️ Admin Panel
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="flex-1 p-6 bg-gray-50 space-y-8">
+
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500">
+      <a href="{% url 'drillholes' %}" class="hover:underline text-cyan-600">Drillholes</a>
+      <span class="mx-2">/</span>
+      <span class="text-gray-800 font-medium">{{ drillhole.name }}</span>
+    </div>
+
+    <!-- Collar Metadata Card -->
+    <div class="bg-white rounded-xl shadow p-6">
+      <h1 class="text-2xl font-bold text-gray-900 mb-1">{{ drillhole.name }}</h1>
+      {% if drillhole.hole_id_original %}
+        <p class="text-sm text-gray-500 mb-4">Originally: {{ drillhole.hole_id_original }}</p>
+      {% endif %}
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm">
+        {% if drillhole.drill_type %}
+        <div><span class="font-medium text-gray-600">Drill Type</span><p class="text-gray-900">{{ drillhole.get_drill_type_display }}</p></div>
+        {% endif %}
+        {% if drillhole.company %}
+        <div><span class="font-medium text-gray-600">Company</span><p class="text-gray-900">{{ drillhole.company }}</p></div>
+        {% endif %}
+        {% if drillhole.drill_company %}
+        <div><span class="font-medium text-gray-600">Drill Contractor</span><p class="text-gray-900">{{ drillhole.drill_company }}</p></div>
+        {% endif %}
+        {% if drillhole.current_epm %}
+        <div><span class="font-medium text-gray-600">EPM</span><p class="text-gray-900">{{ drillhole.current_epm }}</p></div>
+        {% endif %}
+        {% if drillhole.depth %}
+        <div><span class="font-medium text-gray-600">Total Depth</span><p class="text-gray-900">{{ drillhole.depth }} m</p></div>
+        {% endif %}
+        {% if drillhole.elevation %}
+        <div><span class="font-medium text-gray-600">Elevation (RL)</span><p class="text-gray-900">{{ drillhole.elevation }} m</p></div>
+        {% endif %}
+        {% if drillhole.dip %}
+        <div><span class="font-medium text-gray-600">Dip</span><p class="text-gray-900">{{ drillhole.dip }}&deg;</p></div>
+        {% endif %}
+        {% if drillhole.azimuth %}
+        <div><span class="font-medium text-gray-600">Azimuth (TN)</span><p class="text-gray-900">{{ drillhole.azimuth }}&deg;</p></div>
+        {% endif %}
+        {% if drillhole.date_commenced %}
+        <div><span class="font-medium text-gray-600">Commenced</span><p class="text-gray-900">{{ drillhole.date_commenced|date:"d M Y" }}</p></div>
+        {% endif %}
+        {% if drillhole.date_completed %}
+        <div><span class="font-medium text-gray-600">Completed</span><p class="text-gray-900">{{ drillhole.date_completed|date:"d M Y" }}</p></div>
+        {% endif %}
+        {% if drillhole.source_crs %}
+        <div><span class="font-medium text-gray-600">Source CRS</span><p class="text-gray-900">{{ drillhole.source_crs }}</p></div>
+        {% endif %}
+        {% if drillhole.collar_location %}
+        <div><span class="font-medium text-gray-600">Coordinates (WGS84)</span>
+          <p class="text-gray-900">{{ drillhole.collar_location.y|floatformat:6 }}, {{ drillhole.collar_location.x|floatformat:6 }}</p>
+        </div>
+        {% endif %}
+      </div>
+      {% if drillhole.comments %}
+      <div class="mt-4 text-sm text-gray-600 bg-gray-50 rounded p-3">{{ drillhole.comments }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Survey Readings -->
+    {% if surveys %}
+    <div class="bg-white rounded-xl shadow p-6">
+      <h2 class="text-lg font-semibold text-gray-800 mb-4">Downhole Survey ({{ surveys.count }} readings)</h2>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Depth (m)</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Dip (&deg;)</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Azimuth TN (&deg;)</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Azimuth Mag (&deg;)</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Comment</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for s in surveys %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2 text-gray-900">{{ s.depth }}</td>
+              <td class="px-4 py-2 text-gray-700">{{ s.dip|default:"—" }}</td>
+              <td class="px-4 py-2 text-gray-700">{{ s.azimuth_tn|default:"—" }}</td>
+              <td class="px-4 py-2 text-gray-700">{{ s.azimuth_mag|default:"—" }}</td>
+              <td class="px-4 py-2 text-gray-500">{{ s.comment }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Lithology Log -->
+    {% if lithology %}
+    <div class="bg-white rounded-xl shadow p-6">
+      <h2 class="text-lg font-semibold text-gray-800 mb-4">Lithology Log ({{ lithology.count }} intervals)</h2>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">From (m)</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">To (m)</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Lithology</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Description</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Weathering</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Hardness</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for l in lithology %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2 text-gray-900">{{ l.from_depth }}</td>
+              <td class="px-4 py-2 text-gray-900">{{ l.to_depth }}</td>
+              <td class="px-4 py-2 font-medium text-gray-800">{{ l.lithology }}</td>
+              <td class="px-4 py-2 text-gray-600 max-w-xs truncate" title="{{ l.description }}">{{ l.description }}</td>
+              <td class="px-4 py-2 text-gray-600">{{ l.weathering }}</td>
+              <td class="px-4 py-2 text-gray-600">{{ l.hardness }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Assay Results -->
+    {% if assays %}
+    <div class="bg-white rounded-xl shadow p-6">
+      <h2 class="text-lg font-semibold text-gray-800 mb-4">Assay Results ({{ assays.count }} intervals)</h2>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">From (m)</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">To (m)</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Sample #</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Au ppm</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Cu ppm</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Pb ppm</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Zn ppm</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Ag ppm</th>
+              <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase text-xs">Laboratory</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for a in assays %}
+            <tr class="hover:bg-gray-50 {% if a.au_ppm and a.au_ppm > 0.1 %}bg-yellow-50{% endif %}">
+              <td class="px-4 py-2 text-gray-900">{{ a.from_depth }}</td>
+              <td class="px-4 py-2 text-gray-900">{{ a.to_depth }}</td>
+              <td class="px-4 py-2 text-gray-600">{{ a.sample_number }}</td>
+              <td class="px-4 py-2 {% if a.au_ppm and a.au_ppm > 0.1 %}font-semibold text-yellow-700{% else %}text-gray-700{% endif %}">{{ a.au_ppm|default:"—" }}</td>
+              <td class="px-4 py-2 text-gray-700">{{ a.cu_ppm|default:"—" }}</td>
+              <td class="px-4 py-2 text-gray-700">{{ a.pb_ppm|default:"—" }}</td>
+              <td class="px-4 py-2 text-gray-700">{{ a.zn_ppm|default:"—" }}</td>
+              <td class="px-4 py-2 text-gray-700">{{ a.ag_ppm|default:"—" }}</td>
+              <td class="px-4 py-2 text-gray-500">{{ a.laboratory }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-2 text-xs text-gray-400">Rows highlighted yellow have Au &gt; 0.1 ppm. Negative values denote below-detection-limit.</p>
+    </div>
+    {% endif %}
+
+    {% if not surveys and not lithology and not assays %}
+    <div class="bg-white rounded-xl shadow p-8 text-center text-gray-400">
+      No survey, lithology, or assay data for this drillhole. Run the import command to load sub-surface data.
+    </div>
+    {% endif %}
+
+  </main>
+</div>
+{% endblock %}

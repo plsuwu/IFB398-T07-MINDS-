@@ -4,6 +4,7 @@ from django.contrib.gis.admin import GISModelAdmin
 
 from .models import (
     Process, Document, Organisation, Prospect, Tenement, Drillhole,
+    DrillholeSurvey, LithologyInterval, AssayResult,
     UserProfile, AuditLog, ApprovalWorkflow, DocumentView, SavedReport, DocLink
 )
 
@@ -57,10 +58,58 @@ class TenementAdmin(GISModelAdmin):
     search_fields = ("name",)
 
 @djadmin.register(Drillhole)
-class DrillholeAdmin(GISModelAdmin):  
-    list_display = ("name", "organisation", "process", "depth", "created_at")
-    list_filter = ("organisation",)
-    search_fields = ("name",)
+class DrillholeAdmin(GISModelAdmin):
+    list_display  = ("name", "drill_type", "organisation", "process", "elevation", "depth", "date_commenced", "created_at")
+    list_filter   = ("drill_type", "organisation", "process")
+    search_fields = ("name", "hole_id_original", "company", "current_epm")
+    readonly_fields = ("source_crs", "source_easting", "source_northing", "created_at", "updated_at")
+    fieldsets = (
+        ("Identity", {
+            "fields": ("name", "hole_id_original", "organisation", "process"),
+        }),
+        ("Collar Geometry", {
+            "fields": ("collar_location", "elevation", "source_crs", "source_easting", "source_northing"),
+        }),
+        ("Survey (Collar Reading)", {
+            "fields": ("depth", "dip", "azimuth", "drill_type"),
+        }),
+        ("Administrative", {
+            "fields": ("company", "drill_company", "current_epm", "original_epm",
+                       "year_report", "company_report", "date_commenced", "date_completed"),
+        }),
+        ("Notes", {
+            "fields": ("comments",),
+        }),
+        ("Timestamps", {
+            "fields": ("created_at", "updated_at"),
+            "classes": ("collapse",),
+        }),
+    )
+
+
+@djadmin.register(DrillholeSurvey)
+class DrillholeSurveyAdmin(djadmin.ModelAdmin):
+    list_display  = ("drillhole", "depth", "dip", "azimuth_tn", "azimuth_mag", "comment")
+    list_filter   = ("drillhole__organisation",)
+    search_fields = ("drillhole__name",)
+    ordering      = ("drillhole", "depth")
+
+
+@djadmin.register(LithologyInterval)
+class LithologyIntervalAdmin(djadmin.ModelAdmin):
+    list_display  = ("drillhole", "from_depth", "to_depth", "lithology", "description")
+    list_filter   = ("drillhole__organisation", "lithology")
+    search_fields = ("drillhole__name", "lithology", "description")
+    ordering      = ("drillhole", "from_depth")
+
+
+@djadmin.register(AssayResult)
+class AssayResultAdmin(djadmin.ModelAdmin):
+    list_display  = ("drillhole", "from_depth", "to_depth", "au_ppm", "cu_ppm", "pb_ppm", "zn_ppm", "laboratory")
+    list_filter   = ("drillhole__organisation", "laboratory")
+    search_fields = ("drillhole__name", "sample_number", "lab_batch_number")
+    ordering      = ("drillhole", "from_depth")
+
 
 # USER PERMISSIONS & AUDIT ---------------------------------
 

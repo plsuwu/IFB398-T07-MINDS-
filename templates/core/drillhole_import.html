@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block content %}
+{% load static %}
+<div class="flex min-h-screen">
+
+  <!-- Sidebar -->
+  <aside class="w-64 bg-white shadow-md hidden md:flex flex-col">
+    <div class="px-4 py-3 border-b flex items-center gap-3">
+      <img src="{% static 'img/logo.png' %}" alt="OreFox" class="h-14 w-14 object-contain translate-y-2.5">
+      <span class="text-xl font-semibold text-cyan-600">OreFox KMS</span>
+    </div>
+    <nav class="flex-1 p-4 space-y-2">
+      <a href="{% url 'dashboard' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">🏠 <span>Dashboard</span></a>
+      <a href="{% url 'documents' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">📄 <span>Documents</span></a>
+      <a href="{% url 'prospects' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">💎 <span>Prospects</span></a>
+      <a href="{% url 'drillholes' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium bg-cyan-100">🧱 <span>Drillholes</span></a>
+      <a href="{% url 'tenements' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">🗺️ <span>Tenements</span></a>
+      <a href="{% url 'ai_insights' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">📊 <span>Reporting</span></a>
+      <a href="{% url 'document_analysis_page' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">🔍 <span>Document Analysis</span></a>
+      <a href="{% url 'map_view' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">🗺️ <span>Map</span></a>
+    </nav>
+    <div class="p-4 border-t">
+      <a href="/admin/" class="block text-center px-4 py-2 text-sm font-semibold text-white bg-cyan-600 rounded-lg hover:bg-cyan-700">⚙️ Admin Panel</a>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="flex-1 p-6 bg-gray-50 space-y-6">
+
+    <!-- Breadcrumb -->
+    <div class="text-sm text-gray-500">
+      <a href="{% url 'drillholes' %}" class="hover:underline text-cyan-600">Drillholes</a>
+      <span class="mx-2">/</span>
+      <span class="text-gray-800 font-medium">Import Data</span>
+    </div>
+
+    <div>
+      <h1 class="text-3xl font-bold text-gray-900">🧱 Import Drillhole Data</h1>
+      <p class="text-gray-500 mt-1">Upload an Excel workbook (.xlsx) containing collar, survey, lithology, and assay sheets.</p>
+    </div>
+
+    <!-- Form errors -->
+    {% if form_errors %}
+    <div class="bg-red-50 border border-red-200 rounded-xl p-4">
+      <p class="font-semibold text-red-700 mb-2">Could not start import</p>
+      <ul class="list-disc list-inside text-sm text-red-600 space-y-1">
+        {% for e in form_errors %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <!-- Results -->
+    {% if result %}
+    {% with c=counters %}
+    <div class="bg-white rounded-xl shadow p-6 space-y-4">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">{% if dry_run %}🔍{% else %}✅{% endif %}</span>
+        <div>
+          <h2 class="text-lg font-semibold text-gray-800">
+            {% if dry_run %}Dry Run Complete — no data written{% else %}Import Complete{% endif %}
+          </h2>
+          <p class="text-sm text-gray-500">Results for the uploaded workbook</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-cyan-50 rounded-lg p-4 text-center">
+          <p class="text-2xl font-bold text-cyan-700">{{ c.collars_created }}</p>
+          <p class="text-xs text-gray-500 mt-1">Collars created</p>
+        </div>
+        <div class="bg-blue-50 rounded-lg p-4 text-center">
+          <p class="text-2xl font-bold text-blue-700">{{ c.surveys_created }}</p>
+          <p class="text-xs text-gray-500 mt-1">Survey readings</p>
+        </div>
+        <div class="bg-purple-50 rounded-lg p-4 text-center">
+          <p class="text-2xl font-bold text-purple-700">{{ c.litho_created }}</p>
+          <p class="text-xs text-gray-500 mt-1">Lithology intervals</p>
+        </div>
+        <div class="bg-yellow-50 rounded-lg p-4 text-center">
+          <p class="text-2xl font-bold text-yellow-700">{{ c.assay_created }}</p>
+          <p class="text-xs text-gray-500 mt-1">Assay results</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
+        <p>Updated: <span class="font-medium">{{ c.collars_updated }}</span></p>
+        <p>Skipped: <span class="font-medium">{{ c.collars_skipped }}</span></p>
+        <p>Collar errors: <span class="font-medium {% if c.collars_errors %}text-red-600{% endif %}">{{ c.collars_errors }}</span></p>
+        <p>Row errors: <span class="font-medium {% if c.surveys_errors or c.litho_errors or c.assay_errors %}text-orange-600{% endif %}">{{ c.surveys_errors|add:c.litho_errors|add:c.assay_errors }}</span></p>
+      </div>
+
+      {% if import_errors %}
+      <details class="text-sm">
+        <summary class="cursor-pointer text-orange-600 font-medium">Show {{ import_errors|length }} warning{{ import_errors|length|pluralize }} / skipped rows</summary>
+        <div class="mt-2 max-h-48 overflow-y-auto bg-gray-50 rounded p-3 space-y-1 font-mono text-xs text-gray-600">
+          {% for e in import_errors %}<p>{{ e }}</p>{% endfor %}
+        </div>
+      </details>
+      {% endif %}
+
+      {% if not dry_run %}
+      <a href="{% url 'drillholes' %}" class="inline-block px-5 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700">
+        View Drillholes →
+      </a>
+      {% endif %}
+    </div>
+    {% endwith %}
+    {% endif %}
+
+    <!-- Import Form -->
+    <div class="bg-white rounded-xl shadow p-6">
+      <h2 class="text-lg font-semibold text-gray-800 mb-5">Upload Workbook</h2>
+      <form method="post" enctype="multipart/form-data" class="space-y-5" id="import-form">
+        {% csrf_token %}
+
+        <!-- File -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Excel Workbook (.xlsx)</label>
+          <input type="file" name="file" accept=".xlsx" required
+                 class="block w-full text-sm text-gray-700 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+          <p class="text-xs text-gray-400 mt-1">Expected sheets: DH Collars, DH DHSurvey, DH_Lithology, DH_Assays</p>
+        </div>
+
+        <!-- Organisation -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Organisation</label>
+          <select name="organisation" id="org-select" required
+                  class="block w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+            <option value="">Organisation</option>
+            {% for org in organisations %}
+            <option value="{{ org.pk }}" {% if selected_org == org.pk|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Process -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Process / Project</label>
+          <select name="process" id="proc-select" required
+                  class="block w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+            <option value="">Process</option>
+            {% for proc in processes %}
+            <option value="{{ proc.pk }}"
+                    data-org="{{ proc.organisation_id }}"
+                    {% if selected_proc == proc.pk|stringformat:"s" %}selected{% endif %}>
+              {{ proc.name }}{% if proc.organisation %} ({{ proc.organisation.name }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Options -->
+        <div class="flex flex-wrap gap-6">
+          <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" name="dry_run" class="rounded text-cyan-600">
+            <span><span class="font-medium">Dry run:</span> validate without writing to the database</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" name="update" class="rounded text-cyan-600">
+            <span><span class="font-medium">Update existing:</span> overwrite collar records matched by HOLEID</span>
+          </label>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <button type="submit" id="submit-btn"
+                  class="px-6 py-2 bg-cyan-600 text-white font-semibold rounded-lg hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+            Import
+          </button>
+          <p class="text-xs text-gray-400" id="loading-msg" style="display:none">Processing… large files may take up to 30 seconds.</p>
+        </div>
+      </form>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  // Filter process dropdown to only show processes belonging to the selected org.
+  const orgSelect  = document.getElementById('org-select');
+  const procSelect = document.getElementById('proc-select');
+  const allOptions = Array.from(procSelect.querySelectorAll('option[data-org]'));
+
+  function filterProcesses() {
+    const orgId = orgSelect.value;
+    allOptions.forEach(opt => {
+      opt.hidden = orgId && opt.dataset.org !== orgId;
+    });
+    // Reset selection if the current choice no longer matches.
+    if (procSelect.value && procSelect.options[procSelect.selectedIndex].hidden) {
+      procSelect.value = '';
+    }
+  }
+
+  orgSelect.addEventListener('change', filterProcesses);
+  filterProcesses(); // apply on page load in case org is pre-selected
+
+  // Show loading message on submit.
+  document.getElementById('import-form').addEventListener('submit', function () {
+    document.getElementById('submit-btn').disabled = true;
+    document.getElementById('loading-msg').style.display = 'block';
+  });
+</script>
+{% endblock %}

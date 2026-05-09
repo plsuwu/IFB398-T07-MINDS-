@@ -13,6 +13,8 @@ urlpatterns = [
     path("doclinks/<int:pk>/delete/", views.delete_doc_link, name="delete_doc_link"),
 
     path("drillholes/", views.drillholes, name="drillholes"),
+    path("drillholes/import/", views.drillhole_import, name="drillhole_import"),
+    path("drillholes/<uuid:pk>/", views.drillhole_detail, name="drillhole_detail"),
     path("tenements/", views.tenements, name="tenements"),
     path("documents/", views.documents, name="documents"),
     path("documents/<uuid:pk>/", views.document_detail, name="document_detail"),

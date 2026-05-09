@@ -179,27 +179,151 @@ class Tenement(models.Model):
 
 
 class Drillhole(models.Model):
+
+    class DrillType(models.TextChoices):
+        RC  = "RC",  _("Reverse Circulation")
+        DDH = "DDH", _("Diamond Drill Hole")
+        RAB = "RAB", _("Rotary Air Blast")
+        AC  = "AC",  _("Air Core")
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, unique=True, null=False)
     name = models.CharField(max_length=64, null=False)
     organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE)
     process = models.ForeignKey(Process, on_delete=models.CASCADE)
 
-    # Geospatial field - drillhole collar location (apparently collar is the term the industry uses for the exact drillhole location)
+    # Geospatial — collar point in WGS84
     collar_location = models.PointField(srid=4326, null=True, blank=True)
 
-    # Drillhole survey data
-    depth = models.FloatField(null=True, blank=True, help_text="Total depth in meters")
-    azimuth = models.FloatField(null=True, blank=True, help_text="Bearing (0-360 degrees)") # Directional angle thing
-    dip = models.FloatField(null=True, blank=True, help_text="Dip angle (-90 to 90 degrees, negative = downward)")
+    # Original drillhole survey data (collar reading)
+    depth   = models.FloatField(null=True, blank=True, help_text="Total depth in meters")
+    azimuth = models.FloatField(null=True, blank=True, help_text="Bearing true north (0-360 degrees)")
+    dip     = models.FloatField(null=True, blank=True, help_text="Dip angle (-90 to 90 degrees, negative = downward)")
+
+    # Extended collar metadata (populated by import command)
+    drill_type     = models.CharField(max_length=8, choices=DrillType.choices, blank=True)
+    company        = models.CharField(max_length=128, blank=True)
+    drill_company  = models.CharField(max_length=128, blank=True)
+    current_epm    = models.CharField(max_length=64, blank=True)
+    original_epm   = models.CharField(max_length=64, blank=True)
+    year_report    = models.PositiveSmallIntegerField(null=True, blank=True)
+    company_report = models.CharField(max_length=64, blank=True)
+    elevation      = models.FloatField(null=True, blank=True, help_text="Collar elevation (RL) in metres")
+    date_commenced = models.DateField(null=True, blank=True)
+    date_completed = models.DateField(null=True, blank=True)
+    hole_id_original = models.CharField(max_length=64, blank=True)
+    comments       = models.TextField(blank=True)
+
+    # Coordinate provenance — raw source values before WGS84 transformation
+    source_crs      = models.CharField(max_length=32, blank=True, help_text="e.g. EPSG:28356")
+    source_easting  = models.FloatField(null=True, blank=True)
+    source_northing = models.FloatField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        return self.name
+
     def __repr__(self):
         return (
-            f"Drillholed(id={self.id},name={self.name},organisation={self.organisation},"
+            f"Drillhole(id={self.id},name={self.name},organisation={self.organisation},"
             f"process={self.process},created_at={self.created_at},updated_at={self.updated_at}"
         )
+
+
+class DrillholeSurvey(models.Model):
+    id        = models.UUIDField(primary_key=True, default=uuid.uuid4, unique=True)
+    drillhole = models.ForeignKey(Drillhole, on_delete=models.CASCADE, related_name="surveys")
+    depth     = models.FloatField(help_text="Metres down hole")
+    dip       = models.FloatField(null=True, blank=True, help_text="Dip angle in degrees")
+    azimuth_tn  = models.FloatField(null=True, blank=True, help_text="Azimuth true north (0-360)")
+    azimuth_mag = models.FloatField(null=True, blank=True, help_text="Azimuth magnetic (0-360)")
+    comment   = models.CharField(max_length=128, blank=True)
+
+    class Meta:
+        ordering = ["drillhole", "depth"]
+
+    def __str__(self):
+        return f"{self.drillhole.name} @ {self.depth}m"
+
+
+class LithologyInterval(models.Model):
+    id        = models.UUIDField(primary_key=True, default=uuid.uuid4, unique=True)
+    drillhole = models.ForeignKey(Drillhole, on_delete=models.CASCADE, related_name="lithology")
+    from_depth = models.FloatField()
+    to_depth   = models.FloatField()
+    lithology  = models.CharField(max_length=128, blank=True)
+    description = models.TextField(blank=True)
+    mineralisation   = models.CharField(max_length=128, blank=True)
+    hardness         = models.CharField(max_length=64, blank=True)
+    weathering       = models.CharField(max_length=64, blank=True)
+    acid_reaction    = models.CharField(max_length=64, blank=True)
+    colour           = models.CharField(max_length=64, blank=True)
+    oxidation        = models.CharField(max_length=64, blank=True)
+    mineralisation_b = models.CharField(max_length=128, blank=True,
+                           help_text="Second mineralisation column from source (col L)")
+    mineralisation_2 = models.CharField(max_length=128, blank=True)
+    alteration       = models.CharField(max_length=128, blank=True)
+    alteration_2     = models.CharField(max_length=128, blank=True)
+    veins            = models.CharField(max_length=128, blank=True)
+    recovery_pct     = models.CharField(max_length=32, blank=True)
+    core_size        = models.CharField(max_length=32, blank=True)
+
+    class Meta:
+        ordering = ["drillhole", "from_depth"]
+
+    def __str__(self):
+        return f"{self.drillhole.name} {self.from_depth}–{self.to_depth}m: {self.lithology}"
+
+
+class AssayResult(models.Model):
+    id        = models.UUIDField(primary_key=True, default=uuid.uuid4, unique=True)
+    drillhole = models.ForeignKey(Drillhole, on_delete=models.CASCADE, related_name="assays")
+    from_depth = models.FloatField()
+    to_depth   = models.FloatField()
+    lab_batch_number = models.CharField(max_length=64, blank=True)
+    sample_number    = models.CharField(max_length=64, blank=True)
+    comment          = models.CharField(max_length=256, blank=True)
+
+    # Assay values — nullable floats; negative values denote below-detection-limit
+    au_ppm       = models.FloatField(null=True, blank=True)
+    au_ppm_check1 = models.FloatField(null=True, blank=True)
+    au_ppm_check2 = models.FloatField(null=True, blank=True)
+    cu_ppm  = models.FloatField(null=True, blank=True)
+    pb_ppm  = models.FloatField(null=True, blank=True)
+    zn_ppm  = models.FloatField(null=True, blank=True)
+    ag_ppm  = models.FloatField(null=True, blank=True)
+    as_ppm  = models.FloatField(null=True, blank=True)
+    bi_ppm  = models.FloatField(null=True, blank=True)
+    cd_ppm  = models.FloatField(null=True, blank=True)
+    sb_ppm  = models.FloatField(null=True, blank=True)
+    mn_ppm  = models.FloatField(null=True, blank=True)
+    mo_ppm  = models.FloatField(null=True, blank=True)
+    pt_ppb  = models.FloatField(null=True, blank=True)
+    pd_ppb  = models.FloatField(null=True, blank=True)
+
+    # Analysis metadata
+    laboratory  = models.CharField(max_length=64, blank=True)
+    au_method   = models.CharField(max_length=32, blank=True)
+    cu_method   = models.CharField(max_length=32, blank=True)
+    cu_method_2 = models.CharField(max_length=32, blank=True)
+    pb_method   = models.CharField(max_length=32, blank=True)
+    zn_method   = models.CharField(max_length=32, blank=True)
+    ag_method   = models.CharField(max_length=32, blank=True)
+    as_method   = models.CharField(max_length=32, blank=True)
+    bi_method   = models.CharField(max_length=32, blank=True)
+    cd_method   = models.CharField(max_length=32, blank=True)
+    sb_method   = models.CharField(max_length=32, blank=True)
+    mn_method   = models.CharField(max_length=32, blank=True)
+    mo_method   = models.CharField(max_length=32, blank=True)
+    pt_method   = models.CharField(max_length=32, blank=True)
+    pd_method   = models.CharField(max_length=32, blank=True)
+
+    class Meta:
+        ordering = ["drillhole", "from_depth"]
+
+    def __str__(self):
+        return f"{self.drillhole.name} {self.from_depth}–{self.to_depth}m"
 
 
 class Document(models.Model):
