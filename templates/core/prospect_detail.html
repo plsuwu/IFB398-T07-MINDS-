@@ -1,161 +1,293 @@
 {% extends "base.html" %}
-{% block content %}
 {% load static %}
-<div class="flex min-h-screen">
 
-  <!-- Sidebar -->
-  <aside class="w-64 bg-white shadow-md hidden md:flex flex-col">
-    <div class="px-4 py-3 border-b flex items-center gap-3">
-      <img src="{% static 'img/logo.png' %}" alt="OreFox" class="h-14 w-14 object-contain translate-y-2.5">
-      <span class="text-xl font-semibold text-cyan-600">OreFox KMS</span>
-    </div>
-    <nav class="flex-1 p-4 space-y-2">
-      <a href="{% url 'dashboard' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🏠 <span>Dashboard</span>
-      </a>
-      <a href="{% url 'documents' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        📄 <span>Documents</span>
-      </a>
-      <a href="{% url 'prospects' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium bg-cyan-100">
-        💎 <span>Prospects</span>
-      </a>
-      <a href="{% url 'drillholes' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🧱 <span>Drillholes</span>
-      </a>
-      <a href="{% url 'tenements' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🗺️ <span>Tenements</span>
-      </a>
-      <a href="{% url 'ai_insights' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        📊 <span>Reporting</span>
-      </a>
-      <a href="{% url 'document_analysis_page' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🔍 <span>Document Analysis</span>
-      </a>
-      <a href="{% url 'map_view' %}" class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium">
-        🗺️ <span>Map</span>
-      </a>
-    </nav>
-    <div class="p-4 border-t">
-      <a href="/admin/" class="block text-center px-4 py-2 text-sm font-semibold text-white bg-cyan-600 rounded-lg hover:bg-cyan-700">
-        ⚙️ Admin Panel
-      </a>
-    </div>
-  </aside>
+{% block head_extra %}
+<link href="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.js"></script>
+{% endblock %}
 
-  <!-- Main Content -->
-  <main class="flex-1 p-6 bg-gray-50">
+{% block content %}
 
-    <!-- Breadcrumb -->
-    <div class="mb-4 text-sm text-gray-600">
-      <a href="{% url 'prospects' %}" class="hover:text-cyan-600">Prospects</a>
-      <span class="mx-2">/</span>
-      <span class="text-gray-900">{{ prospect.name }}</span>
-    </div>
-
-    <!-- Header Card -->
-    <div class="bg-white rounded-xl shadow-lg overflow-hidden max-w-4xl mb-6">
-      <div class="bg-gradient-to-r from-cyan-600 to-blue-600 text-white p-6">
-        <h1 class="text-3xl font-bold mb-1">💎 {{ prospect.name }}</h1>
-        <p class="text-cyan-100 text-sm">{{ prospect.process.name }} &mdash; {{ prospect.organisation.name }}</p>
-      </div>
-
-      <!-- Metadata grid -->
-      <div class="p-6 border-b grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Organisation</p>
-          <p class="font-medium">{{ prospect.organisation.name }}</p>
-        </div>
-        <div>
-          <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Project / Process</p>
-          <p class="font-medium">{{ prospect.process.name }}</p>
-        </div>
-        <div>
-          <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Created</p>
-          <p class="font-medium">{{ prospect.created_at|date:"M d, Y" }}</p>
-        </div>
-        <div>
-          <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Last Updated</p>
-          <p class="font-medium">{{ prospect.updated_at|date:"M d, Y H:i" }}</p>
-        </div>
-        {% if prospect.geom %}
-        <div>
-          <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Location (WGS84)</p>
-          <p class="font-mono text-sm">{{ prospect.geom.y|floatformat:5 }}°, {{ prospect.geom.x|floatformat:5 }}°</p>
-        </div>
-        {% else %}
-        <div>
-          <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Location</p>
-          <p class="text-yellow-600 text-sm">No geometry mapped yet</p>
-        </div>
-        {% endif %}
-      </div>
-
-      <!-- Hypothesis -->
-      <div class="p-6 border-b">
-        <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Geological Hypothesis</h2>
-        <p class="text-gray-800 leading-relaxed">{{ prospect.hypothesis }}</p>
-      </div>
-
-      <!-- Objective -->
-      <div class="p-6 border-b">
-        <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Exploration Objective</h2>
-        <p class="text-gray-800 leading-relaxed">{{ prospect.objective }}</p>
-      </div>
-
-      <!-- Actions -->
-      <div class="p-6 bg-gray-50 flex gap-3">
-        <a href="{% url 'prospects' %}" class="text-cyan-600 hover:underline text-sm">
-          ← Back to Prospects
-        </a>
-        <a href="/admin/core/prospect/{{ prospect.pk }}/change/" class="text-gray-500 hover:text-gray-700 text-sm">
-          ✏️ Edit in Admin
-        </a>
-      </div>
-    </div>
-
-    <!-- Linked Documents Section -->
-    <div id="linked-documents" class="bg-white rounded-xl shadow max-w-4xl p-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold">Linked Documents</h2>
-        <button
-          hx-get="{% url 'doc_link_picker' %}?content_type=prospect&object_id={{ prospect.pk }}"
-          hx-target="#link-modal-container"
-          hx-swap="innerHTML"
-          class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
-          + Link Document
-        </button>
-      </div>
-
-      <!-- Modal container: HTMX injects the doc_link_picker partial here -->
-      <div id="link-modal-container"></div>
-
-      {% if doc_links %}
-        <ul class="divide-y divide-gray-100">
-          {% for link in doc_links %}
-          <li class="py-3 flex items-center justify-between">
-            <div>
-              <a href="{% url 'document_detail' link.document.pk %}" class="font-medium text-cyan-700 hover:underline">
-                {{ link.document.title }}
-              </a>
-              <span class="ml-2 text-xs text-gray-400">{{ link.document.doc_type }}</span>
-              <p class="text-xs text-gray-400 mt-0.5">Linked {{ link.created_at|date:"M d, Y" }}{% if link.created_by %} by {{ link.created_by.username }}{% endif %}</p>
-            </div>
-            <form hx-post="{% url 'delete_doc_link' link.pk %}"
-                  hx-target="#linked-documents"
-                  hx-swap="outerHTML"
-                  method="post"
-                  class="inline">
-              {% csrf_token %}
-              <button type="submit" class="text-red-400 hover:text-red-600 text-sm">Remove</button>
-            </form>
-          </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="text-gray-400 text-sm">No documents linked yet. Use the button above to attach evidence documents.</p>
-      {% endif %}
-    </div>
-
-  </main>
+<!-- Breadcrumb -->
+<div class="mb-4 text-sm text-gray-600">
+  <a href="{% url 'prospects' %}" class="hover:text-cyan-600">Prospects</a>
+  <span class="mx-2">/</span>
+  <span class="text-gray-900">{{ prospect.name }}</span>
 </div>
+
+<!-- Header Card -->
+<div class="bg-white rounded-xl shadow-lg overflow-hidden max-w-4xl mb-6">
+  <div class="bg-gradient-to-r from-cyan-600 to-blue-600 text-white p-6">
+    <h1 class="text-3xl font-bold mb-1">💎 {{ prospect.name }}</h1>
+    <p class="text-cyan-100 text-sm">{{ prospect.process.name }} &mdash; {{ prospect.organisation.name }}</p>
+  </div>
+
+  <!-- Metadata grid -->
+  <div class="p-6 border-b grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Organisation</p>
+      <p class="font-medium">{{ prospect.organisation.name }}</p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Project</p>
+      <p class="font-medium">
+        <a href="{% url 'project_detail' prospect.process.pk %}" class="text-cyan-600 hover:underline">
+          {{ prospect.process.name }}
+        </a>
+      </p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Created</p>
+      <p class="font-medium">{{ prospect.created_at|date:"M d, Y" }}</p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Last Updated</p>
+      <p class="font-medium">{{ prospect.updated_at|date:"M d, Y H:i" }}</p>
+    </div>
+    {% if prospect.geom %}
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Location (WGS84)</p>
+      <p class="font-mono text-sm">{{ prospect.geom.y|floatformat:5 }}°, {{ prospect.geom.x|floatformat:5 }}°</p>
+    </div>
+    {% else %}
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Location</p>
+      <p class="text-yellow-600 text-sm">No geometry mapped yet</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Hypothesis -->
+  <div class="p-6 border-b">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Geological Hypothesis</h2>
+    <p class="text-gray-800 leading-relaxed">{{ prospect.hypothesis }}</p>
+  </div>
+
+  <!-- Objective -->
+  <div class="p-6 border-b">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Exploration Objective</h2>
+    <p class="text-gray-800 leading-relaxed">{{ prospect.objective }}</p>
+  </div>
+
+  <!-- Actions -->
+  <div class="p-6 bg-gray-50 flex gap-3">
+    <a href="{% url 'prospects' %}" class="text-cyan-600 hover:underline text-sm">
+      ← Back to Prospects
+    </a>
+    <a href="{% url 'edit_prospect' prospect.pk %}" class="text-cyan-600 hover:text-cyan-800 text-sm">
+      ✏️ Edit Prospect
+    </a>
+  </div>
+</div>
+
+<!-- Spatial Map -->
+<div class="bg-white rounded-xl shadow max-w-4xl p-6 mb-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-lg font-semibold">Spatial View</h2>
+    <div class="flex items-center gap-4 text-xs text-gray-500">
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-red-600"></span> Prospect</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-purple-600 opacity-70"></span> Tenements</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-blue-600"></span> Drillholes</span>
+    </div>
+  </div>
+  <div id="prospect-detail-map" class="rounded-lg border border-gray-200" style="height: 420px;"></div>
+  {% if not prospect.geom %}
+    <p class="text-sm text-yellow-600 mt-2">No prospect location mapped — map centred on project area.</p>
+  {% endif %}
+</div>
+
+<!-- Linked Documents Section -->
+<div id="linked-documents" class="bg-white rounded-xl shadow max-w-4xl p-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-lg font-semibold">Linked Documents</h2>
+    <button
+      hx-get="{% url 'doc_link_picker' %}?content_type=prospect&object_id={{ prospect.pk }}"
+      hx-target="#link-modal-container"
+      hx-swap="innerHTML"
+      class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+      + Link Document
+    </button>
+  </div>
+  <div id="link-modal-container"></div>
+
+  {% if doc_links %}
+    <ul class="divide-y divide-gray-100">
+      {% for link in doc_links %}
+      <li class="py-3 flex items-center justify-between">
+        <div>
+          <a href="{% url 'document_detail' link.document.pk %}" class="font-medium text-cyan-700 hover:underline">
+            {{ link.document.title }}
+          </a>
+          <span class="ml-2 text-xs text-gray-400">{{ link.document.doc_type }}</span>
+          <p class="text-xs text-gray-400 mt-0.5">Linked {{ link.created_at|date:"M d, Y" }}{% if link.created_by %} by {{ link.created_by.username }}{% endif %}</p>
+        </div>
+        <form hx-post="{% url 'delete_doc_link' link.pk %}"
+              hx-target="#linked-documents"
+              hx-swap="outerHTML"
+              method="post"
+              class="inline">
+          {% csrf_token %}
+          <button type="submit" class="text-red-400 hover:text-red-600 text-sm">Remove</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-gray-400 text-sm">No documents linked yet. Use the button above to attach evidence documents.</p>
+  {% endif %}
+</div>
+
+<!-- Linked Drillholes Section -->
+{% include "core/partials/linked_drillholes.html" %}
+
+<!-- Tenements Section -->
+<div class="bg-white rounded-xl shadow max-w-4xl p-6 mt-6">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="text-lg font-semibold">Tenements</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Licensed areas for project: {{ prospect.process.name }}</p>
+    </div>
+  </div>
+
+  {% if tenements %}
+    <table class="w-full text-sm">
+      <thead class="text-left text-gray-500 border-b">
+        <tr>
+          <th class="pb-2">Name</th>
+          <th class="pb-2">Geometry</th>
+          <th class="pb-2">Added</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for tenement in tenements %}
+        <tr>
+          <td class="py-2 font-medium">{{ tenement.name }}</td>
+          <td class="py-2 text-gray-500">
+            {% if tenement.geom %}
+              <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">Mapped</span>
+            {% else %}
+              <span class="px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-xs">No boundary</span>
+            {% endif %}
+          </td>
+          <td class="py-2 text-gray-500">{{ tenement.created_at|date:"M d, Y" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-gray-400 text-sm">No tenements linked to this project.</p>
+  {% endif %}
+</div>
+
+<script>
+const prospectMap = new maplibregl.Map({
+    container: 'prospect-detail-map',
+    style: {
+        version: 8,
+        sources: {
+            'satellite': {
+                type: 'raster',
+                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+                tileSize: 256,
+                attribution: '© Esri, Maxar, Earthstar Geographics'
+            },
+            'labels': {
+                type: 'raster',
+                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'],
+                tileSize: 256,
+                attribution: '© Esri'
+            }
+        },
+        layers: [
+            { id: 'satellite-layer', type: 'raster', source: 'satellite', minzoom: 0, maxzoom: 22 },
+            { id: 'labels-layer',    type: 'raster', source: 'labels',    minzoom: 0, maxzoom: 22 }
+        ]
+    },
+    center: [
+        {% if prospect.geom %}{{ prospect.geom.x }}{% else %}133.7751{% endif %},
+        {% if prospect.geom %}{{ prospect.geom.y }}{% else %}-25.2744{% endif %}
+    ],
+    zoom: {% if prospect.geom %}10{% else %}4{% endif %}
+});
+
+prospectMap.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+prospectMap.on('load', () => {
+
+    // Tenements layer
+    prospectMap.addSource('tenements', {
+        type: 'geojson',
+        data: {{ tenements_geojson|safe }}
+    });
+    prospectMap.addLayer({
+        id: 'tenements-fill',
+        type: 'fill',
+        source: 'tenements',
+        paint: { 'fill-color': '#9333ea', 'fill-opacity': 0.25 }
+    });
+    prospectMap.addLayer({
+        id: 'tenements-outline',
+        type: 'line',
+        source: 'tenements',
+        paint: { 'line-color': '#9333ea', 'line-width': 2, 'line-dasharray': [2, 2] }
+    });
+
+    // Drillholes layer
+    prospectMap.addSource('drillholes', {
+        type: 'geojson',
+        data: {{ drillholes_geojson|safe }}
+    });
+    prospectMap.addLayer({
+        id: 'drillholes-layer',
+        type: 'circle',
+        source: 'drillholes',
+        paint: {
+            'circle-radius': 6,
+            'circle-color': '#2563eb',
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#ffffff'
+        }
+    });
+
+    // Prospect location marker
+    {% if prospect.geom %}
+    new maplibregl.Marker({ color: '#dc2626' })
+        .setLngLat([{{ prospect.geom.x }}, {{ prospect.geom.y }}])
+        .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(
+            '<strong>{{ prospect.name|escapejs }}</strong><br>' +
+            '{{ prospect.geom.y|floatformat:5 }}°, {{ prospect.geom.x|floatformat:5 }}°'
+        ))
+        .addTo(prospectMap);
+    {% endif %}
+
+    // Drillhole popups
+    prospectMap.on('click', 'drillholes-layer', (e) => {
+        const p = e.features[0].properties;
+        new maplibregl.Popup()
+            .setLngLat(e.lngLat)
+            .setHTML(
+                '<div style="font-family:sans-serif">' +
+                '<strong>' + (p.name || 'Drillhole') + '</strong><br>' +
+                'Depth: ' + (p.depth ? p.depth + 'm' : 'N/A') +
+                '</div>'
+            )
+            .addTo(prospectMap);
+    });
+
+    // Tenement popups
+    prospectMap.on('click', 'tenements-fill', (e) => {
+        const p = e.features[0].properties;
+        new maplibregl.Popup()
+            .setLngLat(e.lngLat)
+            .setHTML('<div style="font-family:sans-serif"><strong>Tenement: ' + (p.name || 'Unnamed') + '</strong></div>')
+            .addTo(prospectMap);
+    });
+
+    prospectMap.on('mouseenter', 'drillholes-layer', () => { prospectMap.getCanvas().style.cursor = 'pointer'; });
+    prospectMap.on('mouseleave', 'drillholes-layer', () => { prospectMap.getCanvas().style.cursor = ''; });
+    prospectMap.on('mouseenter', 'tenements-fill',   () => { prospectMap.getCanvas().style.cursor = 'pointer'; });
+    prospectMap.on('mouseleave', 'tenements-fill',   () => { prospectMap.getCanvas().style.cursor = ''; });
+});
+</script>
+
 {% endblock %}

@@ -33,8 +33,8 @@ import re, io
 
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.postgres.search import SearchQuery, SearchRank
-from .forms import DocumentForm, DocumentSearchForm
-from .models import Document, Process, SavedReport, AuditLog, log_audit, Prospect, DocLink, UserProfile, Drillhole, DrillholeSurvey, LithologyInterval, AssayResult, Organisation
+from .forms import DocumentForm, DocumentSearchForm, ProspectForm
+from .models import Document, Process, SavedReport, AuditLog, log_audit, Prospect, DocLink, UserProfile, Drillhole, DrillholeSurvey, LithologyInterval, AssayResult, Organisation, Tenement
 from .importers import run_drillhole_import
 from .permissions import role_required, clearance_required, log_view_access
 from .utils import sha256_file, extract_text, chunk_text
@@ -518,6 +518,50 @@ def delete_document(request, pk):
 
 @login_required
 @require_GET
+def projects(request):
+    from django.db.models import Count
+    org_filter = _org_qs_filter(request)
+    qs = (
+        Process.objects
+        .filter(org_filter)
+        .select_related("organisation")
+        .annotate(
+            prospect_count=Count("prospect", distinct=True),
+            drillhole_count=Count("drillhole", distinct=True),
+            document_count=Count("document", distinct=True),
+        )
+        .order_by("-created_at")
+    )
+    page = _paginate(qs, request)
+    return render(request, "core/projects.html", {"page": page})
+
+
+@login_required
+@require_GET
+def project_detail(request, pk):
+    from .models import Tenement
+    org_filter = _org_qs_filter(request)
+    process = get_object_or_404(Process.objects.filter(org_filter), pk=pk)
+
+    prospects_qs = Prospect.objects.filter(process=process).order_by("-created_at")
+    drillholes_qs = Drillhole.objects.filter(process=process).order_by("name")
+    tenements_qs = Tenement.objects.filter(process=process).order_by("name")
+    documents_qs = Document.objects.filter(process=process).order_by("-created_at")
+    reports_qs = SavedReport.objects.filter(process=process).order_by("-created_at")
+
+    return render(request, "core/project_detail.html", {
+        "process":    process,
+        "prospects":  prospects_qs,
+        "drillholes": drillholes_qs,
+        "tenements":  tenements_qs,
+        "documents":  documents_qs[:10],
+        "documents_total": documents_qs.count(),
+        "reports":    reports_qs,
+    })
+
+
+@login_required
+@require_GET
 def prospects(request):
     Prospect = _get_model("core", "Prospect")
     if Prospect:
@@ -534,6 +578,8 @@ def prospects(request):
 
 @login_required
 def prospect_detail(request, pk):
+    from django.core.serializers import serialize
+
     prospect = get_object_or_404(Prospect, pk=pk)
     if not request.user.is_superuser:
         if (
@@ -543,13 +589,134 @@ def prospect_detail(request, pk):
             and prospect.organisation != request.user.profile.organisation
         ):
             raise PermissionDenied
+
     doc_links = DocLink.objects.filter(
         content_type=ContentType.objects.get_for_model(Prospect),
         object_id=prospect.pk,
     ).select_related("document", "created_by").order_by("-created_at")
+
+    drillholes = Drillhole.objects.filter(prospect=prospect).order_by("name")
+    tenements = Tenement.objects.filter(process=prospect.process).order_by("name")
+
+    # GeoJSON for the embedded map
+    drillholes_geojson = serialize(
+        'geojson',
+        drillholes.exclude(collar_location__isnull=True),
+        geometry_field='collar_location',
+        fields=['name', 'depth', 'drill_type'],
+    )
+    tenements_geojson = serialize(
+        'geojson',
+        tenements.exclude(geom__isnull=True),
+        geometry_field='geom',
+        fields=['name'],
+    )
+
     return render(request, "core/prospect_detail.html", {
+        "prospect":           prospect,
+        "doc_links":          doc_links,
+        "drillholes":         drillholes,
+        "tenements":          tenements,
+        "drillholes_geojson": drillholes_geojson,
+        "tenements_geojson":  tenements_geojson,
+    })
+
+
+@login_required
+@role_required(
+    UserProfile.RoleChoices.GEOLOGIST_EXPL,
+    UserProfile.RoleChoices.FIELD_LEAD,
+    UserProfile.RoleChoices.DATA_MANAGER,
+    UserProfile.RoleChoices.ADMIN,
+)
+@require_http_methods(["GET", "POST"])
+def create_prospect(request):
+    from django.contrib.gis.geos import Point
+
+    org = getattr(getattr(request.user, "profile", None), "organisation", None)
+    initial_process_id = request.GET.get("project")
+    initial_process = None
+    if initial_process_id:
+        try:
+            initial_process = Process.objects.get(pk=initial_process_id, organisation=org)
+        except Process.DoesNotExist:
+            pass
+
+    if request.method == "POST":
+        form = ProspectForm(request.POST, organisation=org, initial_process=initial_process)
+        if form.is_valid():
+            prospect = form.save(commit=False)
+            prospect.organisation = org
+            lat = form.cleaned_data["latitude"]
+            lng = form.cleaned_data["longitude"]
+            prospect.geom = Point(float(lng), float(lat), srid=4326)
+            prospect.save()
+            return redirect("prospect_detail", pk=prospect.pk)
+        if request.headers.get("HX-Request"):
+            return render(request, "core/partials/prospect_form_partial.html", {"form": form})
+        return render(request, "core/prospect_form.html", {
+            "form": form,
+            "initial_lat": -25.0,
+            "initial_lng": 133.0,
+            "initial_zoom": 4,
+        })
+
+    form = ProspectForm(organisation=org, initial_process=initial_process)
+    return render(request, "core/prospect_form.html", {
+        "form": form,
+        "initial_lat": -25.0,
+        "initial_lng": 133.0,
+        "initial_zoom": 4,
+    })
+
+
+@login_required
+@role_required(
+    UserProfile.RoleChoices.GEOLOGIST_EXPL,
+    UserProfile.RoleChoices.FIELD_LEAD,
+    UserProfile.RoleChoices.DATA_MANAGER,
+    UserProfile.RoleChoices.ADMIN,
+)
+@require_http_methods(["GET", "POST"])
+def edit_prospect(request, pk):
+    from django.contrib.gis.geos import Point
+
+    prospect = get_object_or_404(Prospect, pk=pk)
+    org = getattr(getattr(request.user, "profile", None), "organisation", None)
+
+    if not request.user.is_superuser and prospect.organisation != org:
+        raise PermissionDenied
+
+    if request.method == "POST":
+        form = ProspectForm(request.POST, instance=prospect, organisation=org)
+        if form.is_valid():
+            updated = form.save(commit=False)
+            lat = form.cleaned_data["latitude"]
+            lng = form.cleaned_data["longitude"]
+            updated.geom = Point(float(lng), float(lat), srid=4326)
+            updated.save()
+            return redirect("prospect_detail", pk=prospect.pk)
+        err_lat = prospect.geom.y if prospect.geom else -25.0
+        err_lng = prospect.geom.x if prospect.geom else 133.0
+        return render(request, "core/prospect_form.html", {
+            "form": form,
+            "editing": True,
+            "prospect": prospect,
+            "initial_lat": err_lat,
+            "initial_lng": err_lng,
+            "initial_zoom": 10 if prospect.geom else 4,
+        })
+
+    initial_lat = prospect.geom.y if prospect.geom else -25.0
+    initial_lng = prospect.geom.x if prospect.geom else 133.0
+    form = ProspectForm(instance=prospect, organisation=org)
+    return render(request, "core/prospect_form.html", {
+        "form": form,
+        "editing": True,
         "prospect": prospect,
-        "doc_links": doc_links,
+        "initial_lat": initial_lat,
+        "initial_lng": initial_lng,
+        "initial_zoom": 10 if prospect.geom else 4,
     })
 
 
@@ -649,6 +816,54 @@ def delete_doc_link(request, pk):
         })
 
     return HttpResponse(status=204)
+
+
+# ---------- Drillhole–Prospect Linking ----------
+
+
+@login_required
+@require_GET
+def drillhole_link_picker(request):
+    prospect_id = request.GET.get("prospect_id")
+    prospect = get_object_or_404(Prospect, pk=prospect_id)
+    available_drillholes = Drillhole.objects.filter(
+        process=prospect.process,
+        prospect__isnull=True,
+    ).order_by("name")
+    return render(request, "core/partials/drillhole_link_picker.html", {
+        "available_drillholes": available_drillholes,
+        "prospect_id": prospect_id,
+    })
+
+
+@login_required
+@require_POST
+def link_drillhole(request):
+    drillhole_id = request.POST.get("drillhole_id")
+    prospect_id  = request.POST.get("prospect_id")
+    prospect  = get_object_or_404(Prospect, pk=prospect_id)
+    drillhole = get_object_or_404(Drillhole, pk=drillhole_id)
+    drillhole.prospect = prospect
+    drillhole.save(update_fields=["prospect"])
+    drillholes = Drillhole.objects.filter(prospect=prospect).order_by("name")
+    return render(request, "core/partials/linked_drillholes.html", {
+        "prospect":   prospect,
+        "drillholes": drillholes,
+    })
+
+
+@login_required
+@require_POST
+def unlink_drillhole(request, pk):
+    drillhole = get_object_or_404(Drillhole, pk=pk)
+    prospect  = drillhole.prospect
+    drillhole.prospect = None
+    drillhole.save(update_fields=["prospect"])
+    drillholes = Drillhole.objects.filter(prospect=prospect).order_by("name")
+    return render(request, "core/partials/linked_drillholes.html", {
+        "prospect":   prospect,
+        "drillholes": drillholes,
+    })
 
 
 @login_required

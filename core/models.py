@@ -190,6 +190,13 @@ class Drillhole(models.Model):
     name = models.CharField(max_length=64, null=False)
     organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE)
     process = models.ForeignKey(Process, on_delete=models.CASCADE)
+    prospect = models.ForeignKey(
+        'Prospect',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='drillholes',
+    )
 
     # Geospatial — collar point in WGS84
     collar_location = models.PointField(srid=4326, null=True, blank=True)

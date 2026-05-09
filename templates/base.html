@@ -8,11 +8,14 @@
   <link rel="icon" type="image/x-icon" href="{% static 'img/favicon.ico' %}">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+  {% block head_extra %}{% endblock %}
 </head>
 <body class="bg-gray-100 text-gray-900">
-  
-  <main class="p-6">
-    {% block content %}{% endblock %}
-  </main>
+  <div class="flex min-h-screen">
+    {% include "core/partials/sidebar.html" %}
+    <main class="flex-1 p-6 bg-gray-50{% block main_extra_class %}{% endblock %}">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 </body>
 </html>

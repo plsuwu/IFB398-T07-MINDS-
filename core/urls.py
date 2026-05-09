@@ -4,14 +4,24 @@ from . import views
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("home/", views.home, name="home"),
+
+    # Projects
+    path("projects/", views.projects, name="projects"),
+    path("projects/<uuid:pk>/", views.project_detail, name="project_detail"),
+
+    path("prospects/new/",            views.create_prospect, name="create_prospect"),
     path("prospects/", views.prospects, name="prospects"),
-    path("prospects/<uuid:pk>/", views.prospect_detail, name="prospect_detail"),
+    path("prospects/<uuid:pk>/",      views.prospect_detail, name="prospect_detail"),
+    path("prospects/<uuid:pk>/edit/", views.edit_prospect,   name="edit_prospect"),
 
     # DocLink routes
     path("doclinks/picker/", views.doc_link_picker, name="doc_link_picker"),
     path("doclinks/create/", views.create_doc_link, name="create_doc_link"),
     path("doclinks/<int:pk>/delete/", views.delete_doc_link, name="delete_doc_link"),
 
+    path("drillholes/link-picker/",      views.drillhole_link_picker, name="drillhole_link_picker"),
+    path("drillholes/link/",             views.link_drillhole,        name="link_drillhole"),
+    path("drillholes/<uuid:pk>/unlink/", views.unlink_drillhole,      name="unlink_drillhole"),
     path("drillholes/", views.drillholes, name="drillholes"),
     path("drillholes/import/", views.drillhole_import, name="drillhole_import"),
     path("drillholes/<uuid:pk>/", views.drillhole_detail, name="drillhole_detail"),
