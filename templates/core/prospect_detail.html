@@ -140,6 +140,48 @@
 <!-- Linked Drillholes Section -->
 {% include "core/partials/linked_drillholes.html" %}
 
+<!-- Reports Section -->
+<div class="bg-white rounded-xl shadow max-w-4xl p-6 mt-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-lg font-semibold">Reports</h2>
+    <form method="post" action="{% url 'generate_prospect_report' prospect.pk %}" class="inline">
+      {% csrf_token %}
+      <input type="hidden" name="report_title" value="{{ prospect.name }} — Prospect Report">
+      <button type="submit" class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+        + Generate Report
+      </button>
+    </form>
+  </div>
+
+  {% if prospect_reports %}
+    <ul class="divide-y divide-gray-100">
+      {% for report in prospect_reports %}
+      <li class="py-3 flex items-center justify-between">
+        <div>
+          <a href="{% url 'saved_report_editor' report.pk %}" class="font-medium text-cyan-700 hover:underline">
+            {{ report.title }}
+          </a>
+          <p class="text-xs text-gray-400 mt-0.5">
+            v{{ report.version_number }} · {{ report.created_at|date:"M d, Y" }}
+            {% if report.created_by %} · by {{ report.created_by.username }}{% endif %}
+          </p>
+        </div>
+        <span class="px-2 py-0.5 rounded-full text-xs font-semibold
+          {% if report.status == 'DRAFT' %}bg-gray-100 text-gray-600
+          {% elif report.status == 'UNDER_REVIEW' %}bg-yellow-100 text-yellow-700
+          {% elif report.status == 'APPROVED' %}bg-green-100 text-green-700
+          {% elif report.status == 'PUBLISHED' %}bg-blue-100 text-blue-700
+          {% endif %}">
+          {{ report.get_status_display }}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-gray-400 text-sm">No reports yet. Generate one using the button above.</p>
+  {% endif %}
+</div>
+
 <!-- Tenements Section -->
 <div class="bg-white rounded-xl shadow max-w-4xl p-6 mt-6">
   <div class="flex items-center justify-between mb-4">

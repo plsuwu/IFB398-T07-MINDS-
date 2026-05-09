@@ -9,10 +9,11 @@ urlpatterns = [
     path("projects/", views.projects, name="projects"),
     path("projects/<uuid:pk>/", views.project_detail, name="project_detail"),
 
-    path("prospects/new/",            views.create_prospect, name="create_prospect"),
+    path("prospects/new/",                              views.create_prospect,          name="create_prospect"),
     path("prospects/", views.prospects, name="prospects"),
-    path("prospects/<uuid:pk>/",      views.prospect_detail, name="prospect_detail"),
-    path("prospects/<uuid:pk>/edit/", views.edit_prospect,   name="edit_prospect"),
+    path("prospects/<uuid:pk>/",                        views.prospect_detail,          name="prospect_detail"),
+    path("prospects/<uuid:pk>/edit/",                   views.edit_prospect,            name="edit_prospect"),
+    path("prospects/<uuid:pk>/generate-report/",        views.generate_prospect_report, name="generate_prospect_report"),
 
     # DocLink routes
     path("doclinks/picker/", views.doc_link_picker, name="doc_link_picker"),
@@ -21,6 +22,8 @@ urlpatterns = [
 
     path("drillholes/link-picker/",      views.drillhole_link_picker, name="drillhole_link_picker"),
     path("drillholes/link/",             views.link_drillhole,        name="link_drillhole"),
+    path("drillholes/bulk-link/",        views.bulk_link_drillholes,  name="bulk_link_drillholes"),
+    path("drillholes/bulk-assign/",      views.bulk_assign_drillholes, name="bulk_assign_drillholes"),
     path("drillholes/<uuid:pk>/unlink/", views.unlink_drillhole,      name="unlink_drillhole"),
     path("drillholes/", views.drillholes, name="drillholes"),
     path("drillholes/import/", views.drillhole_import, name="drillhole_import"),
@@ -51,9 +54,15 @@ urlpatterns = [
     path("ai/reports/editor/<uuid:process_id>/", views.report_editor, name="report_editor"),
     path("ai/reports/<uuid:report_id>/view/", views.saved_report_editor, name="saved_report_editor"),
 
-    # Save / Update 
+    # Save / Update
     path("ai/reports/save/", views.save_report, name="save_report"),
-    path("ai/reports/<uuid:report_id>/update/", views.update_saved_report, name="update_saved_report"),
+    path("ai/reports/<uuid:report_id>/update/",  views.update_saved_report,       name="update_saved_report"),
+
+    # JORC Approval Workflow
+    path("ai/reports/<uuid:report_id>/submit/",  views.submit_report_for_review,  name="submit_report_for_review"),
+    path("ai/reports/<uuid:report_id>/approve/", views.approve_report,             name="approve_report"),
+    path("ai/reports/<uuid:report_id>/reject/",  views.reject_report,              name="reject_report"),
+    path("ai/reports/<uuid:report_id>/publish/", views.publish_report,             name="publish_report"),
 
     # Export from editor content via POST 
     path("ai/reports/export/", views.export_report, name="export_report"),

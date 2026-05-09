@@ -597,6 +597,7 @@ def prospect_detail(request, pk):
 
     drillholes = Drillhole.objects.filter(prospect=prospect).order_by("name")
     tenements = Tenement.objects.filter(process=prospect.process).order_by("name")
+    prospect_reports = SavedReport.objects.filter(prospect=prospect).order_by("-created_at")
 
     # GeoJSON for the embedded map
     drillholes_geojson = serialize(
@@ -617,6 +618,7 @@ def prospect_detail(request, pk):
         "doc_links":          doc_links,
         "drillholes":         drillholes,
         "tenements":          tenements,
+        "prospect_reports":   prospect_reports,
         "drillholes_geojson": drillholes_geojson,
         "tenements_geojson":  tenements_geojson,
     })
@@ -634,6 +636,10 @@ def create_prospect(request):
     from django.contrib.gis.geos import Point
 
     org = getattr(getattr(request.user, "profile", None), "organisation", None)
+    if org is None:
+        messages.error(request, "Your account is not linked to an organisation. Ask an administrator to assign one before creating prospects.")
+        return redirect("prospects")
+
     initial_process_id = request.GET.get("project")
     initial_process = None
     if initial_process_id:
@@ -720,6 +726,58 @@ def edit_prospect(request, pk):
     })
 
 
+@login_required
+@role_required(
+    UserProfile.RoleChoices.GEOLOGIST_EXPL,
+    UserProfile.RoleChoices.FIELD_LEAD,
+    UserProfile.RoleChoices.DATA_MANAGER,
+    UserProfile.RoleChoices.ADMIN,
+)
+@require_POST
+def generate_prospect_report(request, pk):
+    import hashlib
+    prospect = get_object_or_404(Prospect, pk=pk)
+    org_filter = _org_qs_filter(request)
+    if not Prospect.objects.filter(org_filter, pk=pk).exists():
+        raise PermissionDenied
+
+    clearance_level = _get_clearance_level(request)
+    report_title = request.POST.get("report_title", "").strip() or f"{prospect.name} — Prospect Report"
+
+    try:
+        md = generate_project_report(str(prospect.process_id), clearance_level=clearance_level)
+    except Exception as e:
+        log.error("Prospect report generation failed: %s", e)
+        messages.error(request, f"Report generation failed: {e}")
+        return redirect("prospect_detail", pk=pk)
+
+    existing = SavedReport.objects.filter(
+        prospect=prospect, title=report_title
+    ).order_by("-version_number").first()
+
+    if existing:
+        report = SavedReport.create_version(
+            parent=existing,
+            content_md=md,
+            user=request.user,
+            reason=SavedReport.ChangeReason.REGENERATED,
+        )
+    else:
+        report = SavedReport.objects.create(
+            process=prospect.process,
+            organisation=prospect.organisation,
+            prospect=prospect,
+            title=report_title,
+            content_md=md,
+            content_hash=hashlib.sha256(md.encode()).hexdigest(),
+            created_by=request.user,
+            version_number=1,
+            change_reason=SavedReport.ChangeReason.GENERATED,
+        )
+
+    return redirect("saved_report_editor", report_id=report.pk)
+
+
 # ---------- DocLink Views ----------
 
 _LINKABLE_MODELS = {
@@ -751,12 +809,12 @@ def doc_link_picker(request):
 @login_required
 @require_POST
 def create_doc_link(request):
-    """Create a DocLink between a document and a target entity. Returns updated linked-documents section."""
-    document_id = request.POST.get("document_id")
+    """Create one or more DocLinks between documents and a target entity."""
+    document_ids = request.POST.getlist("document_id")
     content_type_label = request.POST.get("content_type_label")
     object_id = request.POST.get("object_id")
 
-    if not all([document_id, content_type_label, object_id]):
+    if not document_ids or not content_type_label or not object_id:
         return HttpResponseBadRequest("Missing required fields.")
 
     if content_type_label not in _LINKABLE_MODELS:
@@ -768,14 +826,15 @@ def create_doc_link(request):
     except ContentType.DoesNotExist:
         return HttpResponseBadRequest("Content type not found.")
 
-    document = get_object_or_404(Document, pk=document_id)
-
-    DocLink.objects.get_or_create(
-        document=document,
-        content_type=ct,
-        object_id=object_id,
-        defaults={"created_by": request.user if request.user.is_authenticated else None},
-    )
+    created_by = request.user if request.user.is_authenticated else None
+    for document_id in document_ids:
+        document = get_object_or_404(Document, pk=document_id)
+        DocLink.objects.get_or_create(
+            document=document,
+            content_type=ct,
+            object_id=object_id,
+            defaults={"created_by": created_by},
+        )
 
     if content_type_label == "prospect":
         prospect = get_object_or_404(Prospect, pk=object_id)
@@ -867,6 +926,54 @@ def unlink_drillhole(request, pk):
 
 
 @login_required
+@require_POST
+def bulk_link_drillholes(request):
+    """HTMX: link multiple drillholes to a prospect in one action."""
+    prospect_id  = request.POST.get("prospect_id")
+    drillhole_ids = request.POST.getlist("drillhole_id")
+    prospect = get_object_or_404(Prospect, pk=prospect_id)
+    if drillhole_ids:
+        Drillhole.objects.filter(
+            pk__in=drillhole_ids,
+            process=prospect.process,
+        ).update(prospect=prospect)
+    drillholes = Drillhole.objects.filter(prospect=prospect).order_by("name")
+    return render(request, "core/partials/linked_drillholes.html", {
+        "prospect":   prospect,
+        "drillholes": drillholes,
+    })
+
+
+@login_required
+@require_POST
+def bulk_assign_drillholes(request):
+    """Bulk-assign selected drillholes to a prospect from the drillholes list page."""
+    prospect_id   = request.POST.get("prospect_id")
+    drillhole_ids = request.POST.getlist("drillhole_ids")
+
+    if not prospect_id or not drillhole_ids:
+        messages.error(request, "Select a prospect and at least one drillhole.")
+        return redirect("drillholes")
+
+    prospect = get_object_or_404(Prospect, pk=prospect_id)
+    org_filter = _org_qs_filter(request)
+    if not Prospect.objects.filter(org_filter, pk=prospect_id).exists():
+        raise PermissionDenied
+
+    updated = Drillhole.objects.filter(
+        pk__in=drillhole_ids,
+        process=prospect.process,
+    ).update(prospect=prospect)
+
+    skipped = len(drillhole_ids) - updated
+    msg = f"{updated} drillhole{'s' if updated != 1 else ''} linked to {prospect.name}."
+    if skipped:
+        msg += f" {skipped} skipped (different project)."
+    messages.success(request, msg)
+    return redirect("drillholes")
+
+
+@login_required
 @require_GET
 def drillholes(request):
     Drillhole = _get_model("core", "Drillhole")
@@ -875,10 +982,11 @@ def drillholes(request):
         page = _paginate(qs, request)
     else:
         qs, page = [], None
+    prospects = Prospect.objects.filter(_org_qs_filter(request)).select_related("process").order_by("process__name", "name")
     return render(
         request,
         "core/drillholes.html",
-        {"page": page, "model_exists": Drillhole is not None},
+        {"page": page, "model_exists": Drillhole is not None, "prospects": prospects},
     )
 
 
@@ -1584,6 +1692,12 @@ def update_saved_report(request, report_id):
     """
     report = get_object_or_404(SavedReport, pk=report_id)
 
+    if report.status in (SavedReport.Status.APPROVED, SavedReport.Status.PUBLISHED):
+        return JsonResponse(
+            {"success": False, "error": "This report is locked and cannot be edited."},
+            status=403
+        )
+
     is_admin = hasattr(request.user, "profile") and request.user.profile.role == "ADMIN"
     if report.created_by != request.user and not is_admin:
         return JsonResponse({"success": False, "error": "Permission denied."}, status=403)
@@ -1607,6 +1721,80 @@ def update_saved_report(request, report_id):
         "new_version_id": str(new_version.id),
         "version_number": new_version.version_number,
     })
+
+
+# ---------- JORC Approval Workflow Views ----------
+
+@login_required
+@require_POST
+def submit_report_for_review(request, report_id):
+    report = get_object_or_404(SavedReport, pk=report_id)
+    if report.status != SavedReport.Status.DRAFT:
+        messages.error(request, "Only draft reports can be submitted for review.")
+        return redirect("saved_report_editor", report_id=report_id)
+    report.status = SavedReport.Status.UNDER_REVIEW
+    report.save(update_fields=["status"])
+    log_audit(request.user, AuditLog.ActionType.EDIT, report,
+              "Submitted for review", ip_address=request.META.get("REMOTE_ADDR"))
+    messages.success(request, "Report submitted for review.")
+    return redirect("saved_report_editor", report_id=report_id)
+
+
+@login_required
+@require_POST
+def approve_report(request, report_id):
+    report = get_object_or_404(SavedReport, pk=report_id)
+    profile = getattr(request.user, "profile", None)
+    if not (profile and profile.can_approve_jorc):
+        raise PermissionDenied
+    if report.status != SavedReport.Status.UNDER_REVIEW:
+        messages.error(request, "Only reports under review can be approved.")
+        return redirect("saved_report_editor", report_id=report_id)
+    report.status = SavedReport.Status.APPROVED
+    report.save(update_fields=["status"])
+    log_audit(request.user, AuditLog.ActionType.APPROVE, report,
+              "Approved", ip_address=request.META.get("REMOTE_ADDR"))
+    messages.success(request, "Report approved.")
+    return redirect("saved_report_editor", report_id=report_id)
+
+
+@login_required
+@require_POST
+def reject_report(request, report_id):
+    report = get_object_or_404(SavedReport, pk=report_id)
+    profile = getattr(request.user, "profile", None)
+    if not (profile and profile.can_approve_jorc):
+        raise PermissionDenied
+    if report.status != SavedReport.Status.UNDER_REVIEW:
+        messages.error(request, "Only reports under review can be rejected.")
+        return redirect("saved_report_editor", report_id=report_id)
+    report.status = SavedReport.Status.DRAFT
+    report.save(update_fields=["status"])
+    log_audit(request.user, AuditLog.ActionType.REJECT, report,
+              "Rejected — returned to draft", ip_address=request.META.get("REMOTE_ADDR"))
+    messages.success(request, "Report returned to draft.")
+    return redirect("saved_report_editor", report_id=report_id)
+
+
+@login_required
+@require_POST
+def publish_report(request, report_id):
+    report = get_object_or_404(SavedReport, pk=report_id)
+    profile = getattr(request.user, "profile", None)
+    if not (profile and (profile.can_approve_jorc or (
+        hasattr(profile, 'role') and profile.role == UserProfile.RoleChoices.ADMIN
+    ))):
+        raise PermissionDenied
+    if report.status != SavedReport.Status.APPROVED:
+        messages.error(request, "Only approved reports can be published.")
+        return redirect("saved_report_editor", report_id=report_id)
+    report.status = SavedReport.Status.PUBLISHED
+    report.save(update_fields=["status"])
+    log_audit(request.user, AuditLog.ActionType.APPROVE, report,
+              "Published", ip_address=request.META.get("REMOTE_ADDR"))
+    messages.success(request, "Report published.")
+    return redirect("saved_report_editor", report_id=report_id)
+
 
 @login_required
 def report_history(request, process_id):
