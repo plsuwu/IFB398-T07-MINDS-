@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block head_extra %}
+<link href="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<div class="mb-4 text-sm text-gray-600">
+  <a href="{% url 'projects' %}" class="hover:text-cyan-600">Projects</a>
+  <span class="mx-2">/</span>
+  <a href="{% url 'project_detail' process.pk %}" class="hover:text-cyan-600">{{ process.name }}</a>
+  <span class="mx-2">/</span>
+  <span class="text-gray-900">Edit Boundary</span>
+</div>
+
+<div class="max-w-2xl">
+  <h1 class="text-3xl font-bold mb-1">Edit Spatial Boundary</h1>
+  <p class="text-gray-600 mb-6">{{ process.name }}</p>
+
+  <div class="bg-white rounded-xl shadow p-6">
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      {% if messages %}
+        {% for msg in messages %}
+          <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p class="text-red-600 text-sm">{{ msg }}</p>
+          </div>
+        {% endfor %}
+      {% endif %}
+
+      <!-- Draw controls -->
+      <div class="flex gap-2 mb-2">
+        <button type="button" id="btn-start-draw" onclick="startDraw()"
+                class="px-3 py-1.5 text-sm font-medium text-white bg-cyan-600 rounded-lg hover:bg-cyan-700">
+          Draw Boundary
+        </button>
+        <button type="button" id="btn-finish-draw" onclick="finishDraw()"
+                class="hidden px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700">
+          Finish Polygon
+        </button>
+        <button type="button" id="btn-cancel-draw" onclick="cancelDraw()"
+                class="hidden px-3 py-1.5 text-sm font-medium text-white bg-yellow-500 rounded-lg hover:bg-yellow-600">
+          Cancel
+        </button>
+        <button type="button" id="btn-clear" onclick="clearGeom()"
+                class="hidden px-3 py-1.5 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600">
+          Clear
+        </button>
+      </div>
+
+      <p id="draw-hint" class="hidden text-xs text-cyan-700 mb-2">
+        Click on the map to add points. Click <strong>Finish Polygon</strong> when done (min. 3 points).
+        Press <kbd class="bg-white border border-cyan-300 px-1 rounded text-xs">Esc</kbd> to cancel.
+      </p>
+
+      <div id="process-map" class="rounded-lg border border-gray-300 mb-4" style="height: 420px;"></div>
+
+      <input type="hidden" name="geom_geojson" id="id_geom_geojson" value="">
+
+      <div class="flex items-center gap-4 mt-4">
+        <button type="submit"
+                class="px-6 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700">
+          Save Boundary
+        </button>
+        <a href="{% url 'project_detail' process.pk %}" class="text-sm text-gray-500 hover:text-gray-700">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const INITIAL_GEOJSON = {{ initial_geojson|default:"null"|safe }};
+
+const map = new maplibregl.Map({
+    container: 'process-map',
+    style: {
+        version: 8,
+        sources: {
+            'satellite': {
+                type: 'raster',
+                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+                tileSize: 256, attribution: '© Esri'
+            },
+            'labels': {
+                type: 'raster',
+                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'],
+                tileSize: 256, attribution: '© Esri'
+            }
+        },
+        layers: [
+            { id: 'satellite-layer', type: 'raster', source: 'satellite', minzoom: 0, maxzoom: 22 },
+            { id: 'labels-layer',    type: 'raster', source: 'labels',    minzoom: 0, maxzoom: 22 }
+        ]
+    },
+    center: [133.7751, -25.2744],
+    zoom: 4
+});
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+let isDrawing = false;
+let drawPoints = [];
+
+map.on('click', (e) => {
+    if (!isDrawing) return;
+    drawPoints.push([e.lngLat.lng, e.lngLat.lat]);
+    updateDraw();
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isDrawing) cancelDraw();
+});
+
+function startDraw() {
+    isDrawing = true;
+    drawPoints = [];
+    map.getCanvas().style.cursor = 'crosshair';
+    document.getElementById('btn-start-draw').classList.add('hidden');
+    document.getElementById('btn-finish-draw').classList.remove('hidden');
+    document.getElementById('btn-cancel-draw').classList.remove('hidden');
+    document.getElementById('btn-clear').classList.add('hidden');
+    document.getElementById('draw-hint').classList.remove('hidden');
+    if (map.getSource('draw-source')) {
+        map.getSource('draw-source').setData({ type: 'FeatureCollection', features: [] });
+    }
+}
+
+function finishDraw() {
+    if (drawPoints.length < 3) { alert('Add at least 3 points before finishing.'); return; }
+    isDrawing = false;
+    map.getCanvas().style.cursor = '';
+    document.getElementById('btn-finish-draw').classList.add('hidden');
+    document.getElementById('btn-cancel-draw').classList.add('hidden');
+    document.getElementById('btn-start-draw').classList.remove('hidden');
+    document.getElementById('btn-clear').classList.remove('hidden');
+    document.getElementById('draw-hint').classList.add('hidden');
+    const ring = [...drawPoints, drawPoints[0]];
+    document.getElementById('id_geom_geojson').value = JSON.stringify({ type: 'Polygon', coordinates: [ring] });
+    map.getSource('draw-source').setData({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: {} }]
+    });
+    drawPoints = [];
+}
+
+function cancelDraw() {
+    isDrawing = false;
+    drawPoints = [];
+    map.getCanvas().style.cursor = '';
+    document.getElementById('btn-start-draw').classList.remove('hidden');
+    document.getElementById('btn-finish-draw').classList.add('hidden');
+    document.getElementById('btn-cancel-draw').classList.add('hidden');
+    document.getElementById('draw-hint').classList.add('hidden');
+    updateDraw();
+}
+
+function clearGeom() {
+    isDrawing = false;
+    drawPoints = [];
+    document.getElementById('id_geom_geojson').value = '';
+    document.getElementById('btn-clear').classList.add('hidden');
+    if (map.getSource('geom-source')) map.getSource('geom-source').setData({ type: 'FeatureCollection', features: [] });
+    if (map.getSource('draw-source')) map.getSource('draw-source').setData({ type: 'FeatureCollection', features: [] });
+}
+
+function updateDraw() {
+    if (!map.getSource('draw-source')) return;
+    const features = [];
+    drawPoints.forEach(pt => features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: pt }, properties: {} }));
+    if (drawPoints.length > 1) {
+        features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: drawPoints }, properties: {} });
+    }
+    map.getSource('draw-source').setData({ type: 'FeatureCollection', features });
+}
+
+function fitToGeom(geom) {
+    let allCoords = [];
+    if (geom.type === 'Polygon') allCoords = geom.coordinates[0];
+    else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(poly => poly[0].forEach(c => allCoords.push(c)));
+    if (allCoords.length === 0) return;
+    let minLng = allCoords[0][0], maxLng = allCoords[0][0];
+    let minLat = allCoords[0][1], maxLat = allCoords[0][1];
+    allCoords.forEach(c => {
+        minLng = Math.min(minLng, c[0]); maxLng = Math.max(maxLng, c[0]);
+        minLat = Math.min(minLat, c[1]); maxLat = Math.max(maxLat, c[1]);
+    });
+    map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 60 });
+}
+
+map.on('load', () => {
+    map.addSource('geom-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'geom-fill',    type: 'fill', source: 'geom-source', paint: { 'fill-color': '#0e7490', 'fill-opacity': 0.25 } });
+    map.addLayer({ id: 'geom-outline', type: 'line', source: 'geom-source', paint: { 'line-color': '#0e7490', 'line-width': 2 } });
+
+    map.addSource('draw-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'draw-fill',   type: 'fill',   source: 'draw-source', filter: ['==', '$type', 'Polygon'],    paint: { 'fill-color': '#3b82f6', 'fill-opacity': 0.15 } });
+    map.addLayer({ id: 'draw-line',   type: 'line',   source: 'draw-source', filter: ['any', ['==', '$type', 'LineString'], ['==', '$type', 'Polygon']], paint: { 'line-color': '#3b82f6', 'line-width': 2, 'line-dasharray': [3, 1] } });
+    map.addLayer({ id: 'draw-points', type: 'circle', source: 'draw-source', filter: ['==', '$type', 'Point'],      paint: { 'circle-radius': 5, 'circle-color': '#3b82f6', 'circle-stroke-width': 2, 'circle-stroke-color': '#ffffff' } });
+
+    if (INITIAL_GEOJSON) {
+        map.getSource('geom-source').setData({
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', geometry: INITIAL_GEOJSON, properties: {} }]
+        });
+        fitToGeom(INITIAL_GEOJSON);
+        document.getElementById('btn-clear').classList.remove('hidden');
+    }
+});
+</script>
+
+{% endblock %}

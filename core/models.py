@@ -171,6 +171,9 @@ class Tenement(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        return self.name
+
     def __repr__(self):
         return (
             f"Tenement(id={self.id},name={self.name},organisation={self.organisation},"
@@ -334,6 +337,14 @@ class AssayResult(models.Model):
 
 
 class Document(models.Model):
+    REPORTING_STAGE_CHOICES = [
+        ("EARLY_EXPLORATION", "Early Exploration"),
+        ("RESOURCE_DEFINITION", "Resource Definition"),
+        ("FEASIBILITY", "Feasibility"),
+        ("DEVELOPMENT", "Development / Mining"),
+        ("REHABILITATION", "Rehabilitation / Closure"),
+    ]
+
     id = models.UUIDField(default=uuid.uuid4, unique=True, null=False, primary_key=True)
     title = models.CharField(max_length=64)
 
@@ -357,6 +368,96 @@ class Document(models.Model):
     extracted_text = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Versioning
+    version_number  = models.PositiveIntegerField(default=1)
+    parent_document = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='versions'
+    )
+    is_latest = models.BooleanField(default=True, db_index=True)
+
+    # Extended metadata
+    tenement = models.ForeignKey(
+        'Tenement', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='documents'
+    )
+    commodity      = models.CharField(max_length=64, blank=True)
+    reporting_stage = models.CharField(
+        max_length=32, blank=True,
+        choices=REPORTING_STAGE_CHOICES,
+    )
+    author_name = models.CharField(
+        max_length=128, blank=True,
+        help_text="Free-text author name for imported or legacy documents",
+    )
+
+    @classmethod
+    def create_version(cls, parent: 'Document', new_file, user) -> 'Document':
+        """Upload a new file version; marks parent as non-latest."""
+        from .utils import sha256_file, extract_text, chunk_text
+        checksum = sha256_file(new_file)
+        if cls.objects.filter(checksum_sha256=checksum).exists():
+            raise ValueError("Identical file already exists.")
+        parent.is_latest = False
+        parent.save(update_fields=["is_latest"])
+        doc = cls.objects.create(
+            title=parent.title,
+            file=new_file,
+            organisation=parent.organisation,
+            process=parent.process,
+            tags=parent.tags,
+            timestamp=parent.timestamp,
+            doc_type=parent.doc_type,
+            confidentiality=parent.confidentiality,
+            created_by=user,
+            checksum_sha256=checksum,
+            version_number=parent.version_number + 1,
+            parent_document=parent,
+            is_latest=True,
+            tenement=parent.tenement,
+            commodity=parent.commodity,
+            reporting_stage=parent.reporting_stage,
+            author_name=parent.author_name,
+        )
+        text = extract_text(new_file)
+        doc.extracted_text = text or ""
+        doc.save(update_fields=["extracted_text"])
+        if text:
+            chunks = chunk_text(text)
+            DocumentChunk.objects.bulk_create([
+                DocumentChunk(
+                    document=doc,
+                    chunk_index=i,
+                    text=chunk,
+                    process=doc.process,
+                    doc_type=doc.doc_type,
+                    timestamp=doc.timestamp,
+                )
+                for i, chunk in enumerate(chunks)
+            ])
+        return doc
+
+    def get_version_family(self):
+        """Return all versions in this document's chain, ordered by version_number."""
+        root = self
+        visited = set()
+        while root.parent_document_id and root.pk not in visited:
+            visited.add(root.pk)
+            root = root.parent_document
+        chain = []
+        queue = [root]
+        seen = set()
+        while queue:
+            current = queue.pop(0)
+            if current.pk in seen:
+                break
+            seen.add(current.pk)
+            chain.append(current)
+            for child in current.versions.select_related("created_by").order_by("version_number"):
+                if child.pk not in seen:
+                    queue.append(child)
+        return sorted(chain, key=lambda d: d.version_number)
 
     def save(self, *args, **kwargs):
         # Compute SHA-256 checksum if file exists and checksum not already set

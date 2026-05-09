@@ -1,20 +1,20 @@
 from django import forms
 from django.forms import ModelForm
-from .models import Document, Process, Prospect
+from .models import Document, Process, Prospect, Tenement
 from .tagging import TAG_CHOICES
 
 class DocumentForm(ModelForm):
     timestamp = forms.DateField(
         required=False,
         input_formats=[
-            "%Y-%m-%d",   # 2025-10-12  (default, ISO)
-            "%d/%m/%Y",   # 12/10/2025
-            "%d-%m-%Y",   # 12-10-2025
+            "%Y-%m-%d",
+            "%d/%m/%Y",
+            "%d-%m-%Y",
         ],
-        widget=forms.DateInput(attrs={"type": "date"}), # HTML5 picker
+        widget=forms.DateInput(attrs={"type": "date"}),
         label="Date"
     )
-    
+
     tags = forms.TypedMultipleChoiceField(
         choices=TAG_CHOICES,
         coerce=int,
@@ -28,12 +28,32 @@ class DocumentForm(ModelForm):
         fields = [
             "title", "file", "organisation", "process",
             "timestamp", "doc_type", "confidentiality", "tags",
+            "tenement", "commodity", "reporting_stage", "author_name",
         ]
+        widgets = {
+            "commodity": forms.TextInput(attrs={
+                "class": "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 text-sm",
+                "placeholder": "e.g. Gold, Copper",
+            }),
+            "author_name": forms.TextInput(attrs={
+                "class": "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 text-sm",
+                "placeholder": "Author name",
+            }),
+        }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, organisation=None, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk:
             self.initial["tags"] = self.instance.tags or []
+        if organisation:
+            self.fields["tenement"].queryset = Tenement.objects.filter(
+                organisation=organisation
+            ).order_by("name")
+        else:
+            self.fields["tenement"].queryset = Tenement.objects.none()
+        self.fields["tenement"].required = False
+        self.fields["tenement"].empty_label = "— None —"
+        self.fields["reporting_stage"].required = False
 
     def save(self, commit=True):
         obj = super().save(commit=False)
@@ -56,7 +76,6 @@ TAG_FILTER_CHOICES = [("", "Any tag")] + TAG_CHOICES
 _INPUT = "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 text-sm"
 
 class DocumentSearchForm(forms.Form):
-    # Full-text keyword - searched title, type, org, project
     q = forms.CharField(
         required=False,
         widget=forms.TextInput(attrs={
@@ -64,16 +83,12 @@ class DocumentSearchForm(forms.Form):
             "class": _INPUT,
         }),
     )
-
-    # Project / process filter
     process = forms.ModelChoiceField(
         queryset=Process.objects.order_by("name"),
         required=False,
         empty_label="All projects",
         widget=forms.Select(attrs={"class": _INPUT}),
     )
- 
-    # Date range — filters on the document's own date (timestamp), not upload date
     date_from = forms.DateField(
         required=False,
         widget=forms.DateInput(attrs={"type": "date", "class": _INPUT}),
@@ -82,8 +97,6 @@ class DocumentSearchForm(forms.Form):
         required=False,
         widget=forms.DateInput(attrs={"type": "date", "class": _INPUT}),
     )
- 
-    # Metadata filters
     doc_type = forms.ChoiceField(
         choices=[],
         required=False,
@@ -99,10 +112,36 @@ class DocumentSearchForm(forms.Form):
         required=False,
         widget=forms.Select(attrs={"class": _INPUT}),
     )
+    tenement = forms.ModelChoiceField(
+        queryset=Tenement.objects.none(),
+        required=False,
+        empty_label="All tenements",
+        widget=forms.Select(attrs={"class": _INPUT}),
+    )
+    commodity = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={"class": _INPUT, "placeholder": "Commodity"}),
+    )
+    author_name = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={"class": _INPUT, "placeholder": "Author name"}),
+    )
+    reporting_stage = forms.ChoiceField(
+        choices=[],
+        required=False,
+        widget=forms.Select(attrs={"class": _INPUT}),
+    )
 
-    def __init__(self, *args, doc_type_choices=None, **kwargs):
+    def __init__(self, *args, doc_type_choices=None, organisation=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["doc_type"].choices = doc_type_choices or [("", "All types")]
+        self.fields["reporting_stage"].choices = (
+            [("", "All stages")] + Document.REPORTING_STAGE_CHOICES
+        )
+        if organisation:
+            self.fields["tenement"].queryset = Tenement.objects.filter(
+                organisation=organisation
+            ).order_by("name")
 
     def clean(self):
         cleaned = super().clean()
@@ -111,6 +150,47 @@ class DocumentSearchForm(forms.Form):
         if d_from and d_to and d_from > d_to:
             raise forms.ValidationError("'From' date cannot be after 'To' date.")
         return cleaned
+
+
+class TenementForm(ModelForm):
+    geom_geojson = forms.CharField(widget=forms.HiddenInput(), required=False)
+
+    class Meta:
+        model = Tenement
+        fields = ["name", "process"]
+        widgets = {
+            "name": forms.TextInput(attrs={
+                "class": "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 text-sm",
+                "placeholder": "e.g. EPM 27431",
+            }),
+        }
+
+    def __init__(self, *args, organisation=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._organisation = organisation
+        if organisation:
+            self.fields["process"].queryset = Process.objects.filter(
+                organisation=organisation
+            ).order_by("name")
+        else:
+            self.fields["process"].queryset = Process.objects.none()
+        self.fields["process"].label = "Project"
+        self.fields["process"].empty_label = "Select a project..."
+
+    def _post_clean(self):
+        from django.contrib.gis.geos import GEOSGeometry, MultiPolygon, Polygon
+        if self._organisation is not None:
+            self.instance.organisation = self._organisation
+        geojson = (self.cleaned_data or {}).get("geom_geojson", "").strip()
+        if geojson:
+            try:
+                geom = GEOSGeometry(geojson)
+                if isinstance(geom, Polygon):
+                    geom = MultiPolygon(geom)
+                self.instance.geom = geom
+            except Exception:
+                self.add_error("geom_geojson", "Invalid geometry — please redraw the boundary.")
+        super()._post_clean()
 
 
 class ProspectForm(ModelForm):
