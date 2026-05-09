@@ -11,11 +11,16 @@
         <p class="text-gray-600 mt-2">Geospatial visualisation of projects, tenements, prospects, and drillholes</p>
       </div>
       <!-- Draw mode controls -->
-      <div class="flex items-center gap-2 mt-1">
+      <div class="flex items-center flex-wrap gap-2 mt-1">
         <button id="btn-draw"
                 onclick="startDrawing()"
                 class="px-4 py-2 text-sm font-semibold text-white bg-cyan-600 rounded-lg hover:bg-cyan-700 transition">
           Draw Search Area
+        </button>
+        <button id="btn-radius-search"
+                onclick="startRadiusMode()"
+                class="px-4 py-2 text-sm font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 transition">
+          Search by Radius
         </button>
         <button id="btn-finish-draw"
                 onclick="finishDrawing()"
@@ -26,6 +31,11 @@
                 onclick="cancelDrawing()"
                 class="hidden px-4 py-2 text-sm font-semibold text-white bg-yellow-500 rounded-lg hover:bg-yellow-600 transition">
           Cancel
+        </button>
+        <button id="btn-cancel-radius"
+                onclick="cancelRadiusMode()"
+                class="hidden px-4 py-2 text-sm font-semibold text-white bg-yellow-500 rounded-lg hover:bg-yellow-600 transition">
+          Cancel Radius
         </button>
         <button id="btn-clear-search"
                 onclick="clearSearch()"
@@ -40,6 +50,16 @@
          class="hidden mb-3 px-4 py-2 bg-cyan-50 border border-cyan-200 text-cyan-800 text-sm rounded-lg">
       Click on the map to add polygon points. Click <strong>Finish Polygon</strong> when done (min. 3 points).
       Press <kbd class="bg-white border border-cyan-300 px-1 rounded text-xs">Esc</kbd> to cancel.
+    </div>
+
+    <!-- Radius search panel (shown only in radius mode) -->
+    <div id="radius-panel"
+         class="hidden mb-3 px-4 py-3 bg-purple-50 border border-purple-200 text-purple-800 text-sm rounded-lg flex items-center gap-3 flex-wrap">
+      <span class="font-medium">Radius:</span>
+      <input type="number" id="radius-km" value="10" min="0.1" max="500" step="0.1"
+             class="w-24 px-2 py-1 border border-purple-300 rounded text-sm text-gray-800 bg-white">
+      <span>km</span>
+      <span class="text-purple-700">— click anywhere on the map to set the centre and run the search.</span>
     </div>
 
     <!-- Map Container -->
@@ -84,9 +104,9 @@
 
       <div class="bg-white rounded-lg shadow p-4">
         <h3 class="font-semibold mb-3">🔍 Spatial Search</h3>
-        <div class="text-sm text-gray-600 space-y-1">
-          <p>Click <strong>Draw Search Area</strong> above the map, then click points on the map to define a polygon.</p>
-          <p>Hit <strong>Finish Polygon</strong> to run the search.</p>
+        <div class="text-sm text-gray-600 space-y-2">
+          <p><strong>Polygon:</strong> Click <em>Draw Search Area</em>, click points on the map, then <em>Finish Polygon</em>.</p>
+          <p><strong>Radius:</strong> Click <em>Search by Radius</em>, set a radius in km, then click the map centre.</p>
         </div>
       </div>
 
@@ -110,6 +130,7 @@ const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
 // ---------- Draw state ----------
 let isDrawing = false;
+let isRadiusMode = false;
 let drawPoints = [];   // array of [lng, lat] pairs
 
 // ---------- Map initialisation ----------
@@ -142,25 +163,38 @@ const map = new maplibregl.Map({
 
 map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-// ---------- Map click handler (used in draw mode) ----------
+// ---------- Map click handler (draw mode + radius mode) ----------
 map.on('click', (e) => {
-    if (!isDrawing) return;
-    drawPoints.push([e.lngLat.lng, e.lngLat.lat]);
-    updateDrawLayer();
+    if (isDrawing) {
+        drawPoints.push([e.lngLat.lng, e.lngLat.lat]);
+        updateDrawLayer();
+        return;
+    }
+    if (isRadiusMode) {
+        const center = [e.lngLat.lng, e.lngLat.lat];
+        const radiusKm = parseFloat(document.getElementById('radius-km').value) || 10;
+        runSpatialSearchWithRadius(center, radiusKm);
+        return;
+    }
 });
 
-// ESC cancels drawing
+// ESC cancels active mode
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isDrawing) cancelDrawing();
+    if (e.key === 'Escape') {
+        if (isDrawing) cancelDrawing();
+        if (isRadiusMode) cancelRadiusMode();
+    }
 });
 
 // ---------- Draw mode functions ----------
 function startDrawing() {
+    if (isRadiusMode) cancelRadiusMode();
     isDrawing = true;
     drawPoints = [];
     updateDrawLayer();
     map.getCanvas().style.cursor = 'crosshair';
     document.getElementById('btn-draw').classList.add('hidden');
+    document.getElementById('btn-radius-search').classList.add('hidden');
     document.getElementById('btn-finish-draw').classList.remove('hidden');
     document.getElementById('btn-cancel-draw').classList.remove('hidden');
     document.getElementById('btn-clear-search').classList.add('hidden');
@@ -176,6 +210,8 @@ function finishDrawing() {
     isDrawing = false;
     map.getCanvas().style.cursor = '';
 
+    document.getElementById('btn-draw').classList.remove('hidden');
+    document.getElementById('btn-radius-search').classList.remove('hidden');
     document.getElementById('btn-finish-draw').classList.add('hidden');
     document.getElementById('btn-cancel-draw').classList.add('hidden');
     document.getElementById('btn-clear-search').classList.remove('hidden');
@@ -200,6 +236,7 @@ function cancelDrawing() {
     map.getCanvas().style.cursor = '';
     updateDrawLayer();
     document.getElementById('btn-draw').classList.remove('hidden');
+    document.getElementById('btn-radius-search').classList.remove('hidden');
     document.getElementById('btn-finish-draw').classList.add('hidden');
     document.getElementById('btn-cancel-draw').classList.add('hidden');
     document.getElementById('draw-hint').classList.add('hidden');
@@ -208,9 +245,11 @@ function cancelDrawing() {
 function clearSearch() {
     drawPoints = [];
     isDrawing = false;
+    if (isRadiusMode) cancelRadiusMode();
     map.getCanvas().style.cursor = '';
     updateDrawLayer();
     document.getElementById('btn-draw').classList.remove('hidden');
+    document.getElementById('btn-radius-search').classList.remove('hidden');
     document.getElementById('btn-finish-draw').classList.add('hidden');
     document.getElementById('btn-cancel-draw').classList.add('hidden');
     document.getElementById('btn-clear-search').classList.add('hidden');
@@ -241,6 +280,69 @@ function updateDrawLayer() {
     }
 
     map.getSource('draw-source').setData({ type: 'FeatureCollection', features });
+}
+
+// ---------- Radius search ----------
+function makeCircleGeoJSON(center, radiusKm) {
+    const steps = 64;
+    const earthR = 6371;
+    const angDist = radiusKm / earthR;
+    const lat0 = center[1] * Math.PI / 180;
+    const lng0 = center[0] * Math.PI / 180;
+    const coords = [];
+    for (let i = 0; i <= steps; i++) {
+        const bearing = (i * 2 * Math.PI) / steps;
+        const lat2 = Math.asin(
+            Math.sin(lat0) * Math.cos(angDist) +
+            Math.cos(lat0) * Math.sin(angDist) * Math.cos(bearing)
+        );
+        const lng2 = lng0 + Math.atan2(
+            Math.sin(bearing) * Math.sin(angDist) * Math.cos(lat0),
+            Math.cos(angDist) - Math.sin(lat0) * Math.sin(lat2)
+        );
+        coords.push([lng2 * 180 / Math.PI, lat2 * 180 / Math.PI]);
+    }
+    return { type: 'Polygon', coordinates: [coords] };
+}
+
+function startRadiusMode() {
+    if (isDrawing) cancelDrawing();
+    isRadiusMode = true;
+    map.getCanvas().style.cursor = 'crosshair';
+    document.getElementById('btn-draw').classList.add('hidden');
+    document.getElementById('btn-radius-search').classList.add('hidden');
+    document.getElementById('btn-cancel-radius').classList.remove('hidden');
+    document.getElementById('btn-clear-search').classList.add('hidden');
+    document.getElementById('radius-panel').classList.remove('hidden');
+    document.getElementById('draw-hint').classList.add('hidden');
+    document.getElementById('spatial-results-panel').classList.add('hidden');
+}
+
+function cancelRadiusMode() {
+    isRadiusMode = false;
+    map.getCanvas().style.cursor = '';
+    document.getElementById('btn-draw').classList.remove('hidden');
+    document.getElementById('btn-radius-search').classList.remove('hidden');
+    document.getElementById('btn-cancel-radius').classList.add('hidden');
+    document.getElementById('radius-panel').classList.add('hidden');
+}
+
+function runSpatialSearchWithRadius(center, radiusKm) {
+    const geometry = makeCircleGeoJSON(center, radiusKm);
+    // Show circle on map
+    map.getSource('draw-source').setData({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', geometry, properties: {} }]
+    });
+    // Reset radius mode UI
+    isRadiusMode = false;
+    map.getCanvas().style.cursor = '';
+    document.getElementById('btn-cancel-radius').classList.add('hidden');
+    document.getElementById('radius-panel').classList.add('hidden');
+    document.getElementById('btn-draw').classList.remove('hidden');
+    document.getElementById('btn-radius-search').classList.remove('hidden');
+    document.getElementById('btn-clear-search').classList.remove('hidden');
+    runSpatialSearch(geometry);
 }
 
 // ---------- Spatial search fetch ----------

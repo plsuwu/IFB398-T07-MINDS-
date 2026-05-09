@@ -55,6 +55,22 @@
             <label class="block text-sm font-medium mb-1">Tags</label>
             {{ form.tags }} {{ form.tags.errors }}
           </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Tenement</label>
+            {{ form.tenement }} {{ form.tenement.errors }}
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Commodity</label>
+            {{ form.commodity }} {{ form.commodity.errors }}
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Reporting Stage</label>
+            {{ form.reporting_stage }} {{ form.reporting_stage.errors }}
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Author Name</label>
+            {{ form.author_name }} {{ form.author_name.errors }}
+          </div>
         </div>
 
         <!-- Drag & Drop zone -->
@@ -97,7 +113,7 @@
             </div>
             <div class="flex items-center gap-2">
               {% if d.file %}
-                <a class="text-cyan-600 text-sm hover:underline px-2 py-1" href="{{ d.file.url }}" target="_blank">View</a>
+                <a class="text-cyan-600 text-sm hover:underline px-2 py-1" href="{% url 'download_document' d.id %}" target="_blank">View</a>
               {% endif %}
               <form method="post" action="{% url 'delete_document' d.id %}" class="inline" onsubmit="return confirmDelete(event, '{{ d.title }}', '{{ d.id }}')">
                 {% csrf_token %}

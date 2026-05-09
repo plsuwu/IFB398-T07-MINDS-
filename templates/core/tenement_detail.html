@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block content %}
+{% load static %}
+
+<div class="mb-4 text-sm text-gray-600">
+  <a href="{% url 'tenements' %}" class="hover:text-cyan-600">Tenements</a>
+  <span class="mx-2">/</span>
+  <span class="text-gray-900">{{ tenement.name }}</span>
+</div>
+
+<!-- Header -->
+<div class="bg-white rounded-xl shadow-lg overflow-hidden mb-6">
+  <div class="bg-gradient-to-r from-purple-600 to-purple-800 text-white p-6">
+    <div class="flex items-start justify-between">
+      <div>
+        <h1 class="text-3xl font-bold mb-1">🗺️ {{ tenement.name }}</h1>
+        <p class="text-purple-200 text-sm">{{ tenement.organisation.name }}</p>
+      </div>
+      <a href="{% url 'edit_tenement' tenement.pk %}"
+         class="px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white text-sm rounded-lg transition">
+        Edit Tenement
+      </a>
+    </div>
+  </div>
+
+  <div class="p-6 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Project</p>
+      <p class="font-medium">
+        <a href="{% url 'project_detail' tenement.process.pk %}" class="text-cyan-700 hover:underline">
+          {{ tenement.process.name }}
+        </a>
+      </p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Spatial Boundary</p>
+      <p class="font-medium {% if not tenement.geom %}text-yellow-600{% endif %}">
+        {% if tenement.geom %}Mapped{% else %}Not mapped — <a href="{% url 'edit_tenement' tenement.pk %}" class="text-cyan-600 hover:underline">add boundary</a>{% endif %}
+      </p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Created</p>
+      <p class="font-medium">{{ tenement.created_at|date:"M d, Y" }}</p>
+    </div>
+  </div>
+</div>
+
+{% if tenement.geom %}
+<!-- Boundary map -->
+<div class="bg-white rounded-xl shadow mb-6 overflow-hidden">
+  <div class="px-6 py-4 border-b">
+    <h2 class="text-lg font-semibold">Boundary Map</h2>
+  </div>
+  <div id="tenement-map" style="height: 350px;"></div>
+</div>
+
+<link href="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.js"></script>
+<script>
+const GEOM = {{ tenement.geom.json|safe }};
+const map = new maplibregl.Map({
+    container: 'tenement-map',
+    style: {
+        version: 8,
+        sources: {
+            'satellite': {
+                type: 'raster',
+                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+                tileSize: 256, attribution: '© Esri'
+            },
+            'labels': {
+                type: 'raster',
+                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'],
+                tileSize: 256, attribution: '© Esri'
+            }
+        },
+        layers: [
+            { id: 'satellite-layer', type: 'raster', source: 'satellite', minzoom: 0, maxzoom: 22 },
+            { id: 'labels-layer',    type: 'raster', source: 'labels',    minzoom: 0, maxzoom: 22 }
+        ]
+    },
+    center: [133.7751, -25.2744],
+    zoom: 4
+});
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+map.on('load', () => {
+    map.addSource('geom', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: GEOM, properties: {} }] }
+    });
+    map.addLayer({ id: 'geom-fill',    type: 'fill', source: 'geom', paint: { 'fill-color': '#9333ea', 'fill-opacity': 0.3 } });
+    map.addLayer({ id: 'geom-outline', type: 'line', source: 'geom', paint: { 'line-color': '#9333ea', 'line-width': 2 } });
+
+    let allCoords = [];
+    if (GEOM.type === 'Polygon') allCoords = GEOM.coordinates[0];
+    else if (GEOM.type === 'MultiPolygon') GEOM.coordinates.forEach(poly => poly[0].forEach(c => allCoords.push(c)));
+    if (allCoords.length > 0) {
+        let minLng = allCoords[0][0], maxLng = allCoords[0][0];
+        let minLat = allCoords[0][1], maxLat = allCoords[0][1];
+        allCoords.forEach(c => {
+            minLng = Math.min(minLng, c[0]); maxLng = Math.max(maxLng, c[0]);
+            minLat = Math.min(minLat, c[1]); maxLat = Math.max(maxLat, c[1]);
+        });
+        map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 40 });
+    }
+});
+</script>
+{% endif %}
+
+<!-- Documents -->
+<div class="bg-white rounded-xl shadow overflow-hidden">
+  <div class="px-6 py-4 border-b flex items-center justify-between">
+    <h2 class="text-lg font-semibold">📄 Associated Documents</h2>
+    <a href="{% url 'upload' %}" class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+      Upload Document
+    </a>
+  </div>
+  {% if documents %}
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-left text-gray-500 border-b">
+        <tr>
+          <th class="px-6 py-3">Title</th>
+          <th class="px-6 py-3">Type</th>
+          <th class="px-6 py-3">Date</th>
+          <th class="px-6 py-3">Confidentiality</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for doc in documents %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-6 py-3">
+            <a href="{% url 'document_detail' doc.pk %}" class="text-cyan-700 hover:underline font-medium">
+              {{ doc.title }}
+            </a>
+          </td>
+          <td class="px-6 py-3 text-gray-500">{{ doc.doc_type|default:"—" }}</td>
+          <td class="px-6 py-3 text-gray-400">{{ doc.timestamp|date:"M d, Y"|default:doc.created_at|date:"M d, Y" }}</td>
+          <td class="px-6 py-3">
+            <span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+              {{ doc.confidentiality|default:"internal" }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="px-6 py-8 text-center text-gray-400 text-sm">
+      No documents linked to this tenement yet.
+    </div>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -33,9 +33,14 @@
     {% endif %}
     <div>
       <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Spatial Boundary</p>
-      <p class="font-medium {% if not process.geom %}text-yellow-600{% endif %}">
-        {% if process.geom %}Mapped{% else %}Not mapped{% endif %}
-      </p>
+      <div class="flex items-center gap-2">
+        <p class="font-medium {% if not process.geom %}text-yellow-600{% endif %}">
+          {% if process.geom %}Mapped{% else %}Not mapped{% endif %}
+        </p>
+        <a href="{% url 'edit_process_geometry' process.pk %}" class="text-xs text-cyan-600 hover:underline">
+          {% if process.geom %}Edit{% else %}Map it{% endif %}
+        </a>
+      </div>
     </div>
     <div>
       <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Created</p>
@@ -133,8 +138,12 @@
 
 <!-- Tenements Section -->
 <div class="bg-white rounded-xl shadow mb-6 overflow-hidden">
-  <div class="px-6 py-4 border-b">
+  <div class="px-6 py-4 border-b flex items-center justify-between">
     <h2 class="text-lg font-semibold">🗺️ Tenements</h2>
+    <a href="{% url 'create_tenement' %}?process={{ process.pk }}"
+       class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+      + Add Tenement
+    </a>
   </div>
   {% if tenements %}
     <table class="w-full text-sm">
@@ -142,21 +151,30 @@
         <tr>
           <th class="px-6 py-3">Name</th>
           <th class="px-6 py-3">Geometry</th>
+          <th class="px-6 py-3"></th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for t in tenements %}
         <tr class="hover:bg-gray-50">
-          <td class="px-6 py-3 font-medium text-gray-800">{{ t.name }}</td>
+          <td class="px-6 py-3 font-medium">
+            <a href="{% url 'tenement_detail' t.pk %}" class="text-cyan-700 hover:underline">{{ t.name }}</a>
+          </td>
           <td class="px-6 py-3 text-gray-400">
             {% if t.geom %}Mapped{% else %}Not mapped{% endif %}
+          </td>
+          <td class="px-6 py-3 text-right">
+            <a href="{% url 'edit_tenement' t.pk %}" class="text-xs text-cyan-600 hover:underline">Edit</a>
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   {% else %}
-    <div class="px-6 py-8 text-center text-gray-400 text-sm">No tenements linked.</div>
+    <div class="px-6 py-8 text-center text-gray-400 text-sm">
+      No tenements linked.
+      <a href="{% url 'create_tenement' %}?process={{ process.pk }}" class="text-cyan-600 hover:underline ml-1">Add one.</a>
+    </div>
   {% endif %}
 </div>
 

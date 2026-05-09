@@ -52,7 +52,27 @@
             {{ form.tag }}
           </div>
         </div>
-  
+
+        <!-- Row 4: tenement | commodity | author | reporting stage -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Tenement</label>
+            {{ form.tenement }}
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Commodity</label>
+            {{ form.commodity }}
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Author</label>
+            {{ form.author_name }}
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Reporting Stage</label>
+            {{ form.reporting_stage }}
+          </div>
+        </div>
+
         <!-- Date validation error -->
         {% if form.non_field_errors %}
           <p class="mb-4 text-sm text-red-600">{{ form.non_field_errors.0 }}</p>
@@ -97,7 +117,7 @@
 
             <div class="flex gap-2">
               {% if doc.file %}
-                <a href="{{ doc.file.url }}" target="_blank" class="flex-1 text-center px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 text-sm">
+                <a href="{% url 'download_document' doc.id %}" target="_blank" class="flex-1 text-center px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 text-sm">
                   View File
                 </a>
               {% endif %}

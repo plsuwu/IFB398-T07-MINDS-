@@ -33,7 +33,7 @@ import re, io
 
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.postgres.search import SearchQuery, SearchRank
-from .forms import DocumentForm, DocumentSearchForm, ProspectForm
+from .forms import DocumentForm, DocumentSearchForm, ProspectForm, TenementForm
 from .models import Document, Process, SavedReport, AuditLog, log_audit, Prospect, DocLink, UserProfile, Drillhole, DrillholeSurvey, LithologyInterval, AssayResult, Organisation, Tenement
 from .importers import run_drillhole_import
 from .permissions import role_required, clearance_required, log_view_access
@@ -95,7 +95,7 @@ def home(request):
     """
     org_filter = _org_qs_filter(request)
     projects = Process.objects.filter(org_filter).order_by("-created_at")[:10]
-    docs = Document.objects.filter(org_filter).order_by("-created_at")[:10]
+    docs = Document.objects.filter(org_filter, is_latest=True).order_by("-created_at")[:10]
     return render(
         request,
         "core/home.html",
@@ -115,12 +115,12 @@ def dashboard(request):
     Tenement = _get_model("core", "Tenement")
     metrics = {
         "project_count": Process.objects.filter(org_filter).count(),
-        "document_count": Document.objects.filter(org_filter).count(),
+        "document_count": Document.objects.filter(org_filter, is_latest=True).count(),
         "prospect_count": Prospect.objects.filter(org_filter).count() if Prospect else 0,
         "drillhole_count": Drillhole.objects.filter(org_filter).count() if Drillhole else 0,
         "tenement_count": Tenement.objects.filter(org_filter).count() if Tenement else 0,
     }
-    recent_docs = Document.objects.filter(org_filter).order_by("-created_at")[:8]
+    recent_docs = Document.objects.filter(org_filter, is_latest=True).order_by("-created_at")[:8]
     return render(
         request,
         "core/dashboard.html",
@@ -138,7 +138,7 @@ def stats_partial(request):
     Tenement = _get_model("core", "Tenement")
     ctx = {
         "project_count": Process.objects.filter(org_filter).count(),
-        "document_count": Document.objects.filter(org_filter).count(),
+        "document_count": Document.objects.filter(org_filter, is_latest=True).count(),
         "prospect_count": Prospect.objects.filter(org_filter).count() if Prospect else 0,
         "drillhole_count": Drillhole.objects.filter(org_filter).count() if Drillhole else 0,
         "tenement_count": Tenement.objects.filter(org_filter).count() if Tenement else 0,
@@ -218,7 +218,8 @@ def upload_doc(request):
     Upload with SHA-256 de-duplication (your original logic, with tiny polish).
     """
     if request.method == "POST":
-        form = DocumentForm(request.POST, request.FILES)
+        _upload_org = getattr(getattr(request.user, "profile", None), "organisation", None)
+        form = DocumentForm(request.POST, request.FILES, organisation=_upload_org)
         log.debug("FILES keys: %s", list(request.FILES.keys()))  # debug: ensure 'file' is present
         if form.is_valid():
             doc = form.save(commit=False)
@@ -238,7 +239,7 @@ def upload_doc(request):
                 checksum_sha256=doc.checksum_sha256
             ).exists():
                 # Duplicate detected — re-render with error + keep their form state
-                docs = Document.objects.filter(_org_qs_filter(request)).order_by("-created_at")[:20]
+                docs = Document.objects.filter(_org_qs_filter(request), is_latest=True).order_by("-created_at")[:20]
                 return render(
                     request,
                     "core/upload.html",
@@ -305,7 +306,7 @@ def upload_doc(request):
             # Show validation errors + keep the recent docs list
             # Show *why* it failed
             log.warning("Upload invalid: %s", form.errors)
-            docs = Document.objects.filter(_org_qs_filter(request)).order_by("-created_at")[:20]
+            docs = Document.objects.filter(_org_qs_filter(request), is_latest=True).order_by("-created_at")[:20]
             return render(
                 request,
                 "core/upload.html",
@@ -313,8 +314,9 @@ def upload_doc(request):
             )
 
     # GET
-    form = DocumentForm()
-    docs = Document.objects.filter(_org_qs_filter(request)).order_by("-created_at")[:20]
+    _upload_org = getattr(getattr(request.user, "profile", None), "organisation", None)
+    form = DocumentForm(organisation=_upload_org)
+    docs = Document.objects.filter(_org_qs_filter(request), is_latest=True).order_by("-created_at")[:20]
     return render(request, "core/upload.html", {"form": form, "docs": docs})
 
 
@@ -337,8 +339,9 @@ def documents(request):
 
     type_choices = [("", "All types")] + [(t, t) for t in existing_types]
 
-    form = DocumentSearchForm(request.GET or None, doc_type_choices=type_choices)
-    qs = Document.objects.filter(_org_qs_filter(request)).select_related("process", "organisation").order_by("-created_at")
+    org = getattr(getattr(request.user, "profile", None), "organisation", None)
+    form = DocumentSearchForm(request.GET or None, doc_type_choices=type_choices, organisation=org)
+    qs = Document.objects.filter(_org_qs_filter(request), is_latest=True).select_related("process", "organisation").order_by("-created_at")
 
     q_value = ""
     if form.is_valid():
@@ -390,9 +393,19 @@ def documents(request):
                 qs = qs.filter(tags__contains=[int(tag)])
             except (TypeError, ValueError):
                 pass
- 
+
+        if form.cleaned_data.get("tenement"):
+            qs = qs.filter(tenement=form.cleaned_data["tenement"])
+        if form.cleaned_data.get("commodity"):
+            qs = qs.filter(commodity__icontains=form.cleaned_data["commodity"])
+        if form.cleaned_data.get("author_name"):
+            qs = qs.filter(author_name__icontains=form.cleaned_data["author_name"])
+        if form.cleaned_data.get("reporting_stage"):
+            qs = qs.filter(reporting_stage=form.cleaned_data["reporting_stage"])
+
     filters_active = any(request.GET.get(f) for f in
-                         ["q", "process", "date_from", "date_to", "doc_type", "confidentiality", "tag"])
+                         ["q", "process", "date_from", "date_to", "doc_type", "confidentiality", "tag",
+                          "tenement", "author_name", "commodity", "reporting_stage"])
 
     page_num = request.GET.get("page", "1")
 
@@ -454,9 +467,20 @@ def document_detail(request, pk):
         ):
             raise PermissionDenied
     tag_labels = [TAG_LABEL.get(t, f"Tag {t}") for t in (doc.tags or [])]
+    version_family = doc.get_version_family()
+    latest_version = version_family[-1] if version_family else doc
+    profile = getattr(request.user, "profile", None)
+    can_upload_version = profile and profile.role in (
+        UserProfile.RoleChoices.FIELD_LEAD,
+        UserProfile.RoleChoices.DATA_MANAGER,
+        UserProfile.RoleChoices.ADMIN,
+    )
     return render(request, "core/document_detail.html", {
         "doc": doc,
         "tag_labels": tag_labels,
+        "version_family": version_family,
+        "latest_version": latest_version,
+        "can_upload_version": can_upload_version,
     })
 
 
@@ -513,6 +537,53 @@ def delete_document(request, pk):
         return redirect("upload")
 
 
+@login_required
+@require_GET
+def download_document(request, pk):
+    doc = get_object_or_404(Document, pk=pk)
+    profile = getattr(request.user, "profile", None)
+    if not request.user.is_superuser:
+        if profile and not profile.can_access_document(doc):
+            raise PermissionDenied
+    log_audit(
+        request.user, AuditLog.ActionType.DOWNLOAD, doc,
+        f"Downloaded '{doc.title}'",
+        ip_address=request.META.get("REMOTE_ADDR"),
+        user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
+    )
+    url = doc.file.url
+    return redirect(url)
+
+
+@login_required
+@require_POST
+@role_required(
+    UserProfile.RoleChoices.FIELD_LEAD,
+    UserProfile.RoleChoices.DATA_MANAGER,
+    UserProfile.RoleChoices.ADMIN,
+)
+def replace_document(request, pk):
+    org = getattr(getattr(request.user, "profile", None), "organisation", None)
+    parent = get_object_or_404(Document, pk=pk, organisation=org)
+    new_file = request.FILES.get("file")
+    if not new_file:
+        messages.error(request, "No file uploaded.")
+        return redirect("document_detail", pk=pk)
+    try:
+        doc = Document.create_version(parent, new_file, request.user)
+    except ValueError as e:
+        messages.error(request, str(e))
+        return redirect("document_detail", pk=pk)
+    log_audit(
+        request.user, AuditLog.ActionType.CREATE, doc,
+        f"Uploaded version {doc.version_number} of '{parent.title}'",
+        ip_address=request.META.get("REMOTE_ADDR"),
+    )
+    cache.delete(_docs_cache_key(request))
+    messages.success(request, f"Version {doc.version_number} uploaded successfully.")
+    return redirect("document_detail", pk=doc.pk)
+
+
 # ---------- Projects / Domain pages (safe even if models are missing) ----------
 
 
@@ -546,7 +617,7 @@ def project_detail(request, pk):
     prospects_qs = Prospect.objects.filter(process=process).order_by("-created_at")
     drillholes_qs = Drillhole.objects.filter(process=process).order_by("name")
     tenements_qs = Tenement.objects.filter(process=process).order_by("name")
-    documents_qs = Document.objects.filter(process=process).order_by("-created_at")
+    documents_qs = Document.objects.filter(process=process, is_latest=True).order_by("-created_at")
     reports_qs = SavedReport.objects.filter(process=process).order_by("-created_at")
 
     return render(request, "core/project_detail.html", {
@@ -1083,6 +1154,101 @@ def tenements(request):
     )
 
 
+@login_required
+@require_http_methods(["GET", "POST"])
+def create_tenement(request):
+    org = getattr(getattr(request.user, "profile", None), "organisation", None)
+    if request.method == "POST":
+        form = TenementForm(request.POST, organisation=org)
+        if form.is_valid():
+            tenement = form.save()
+            log_audit(request.user, AuditLog.ActionType.CREATE, tenement,
+                      f"Created tenement '{tenement.name}'")
+            messages.success(request, f"Tenement '{tenement.name}' created.")
+            return redirect("tenement_detail", pk=tenement.pk)
+    else:
+        initial = {}
+        process_pk = request.GET.get("process")
+        if process_pk:
+            initial["process"] = process_pk
+        form = TenementForm(organisation=org, initial=initial)
+    return render(request, "core/tenement_form.html", {"form": form, "editing": False})
+
+
+@login_required
+@require_GET
+def tenement_detail(request, pk):
+    tenement = get_object_or_404(
+        Tenement.objects.filter(_org_qs_filter(request)), pk=pk
+    )
+    documents = (
+        Document.objects.filter(tenement=tenement, is_latest=True)
+        .order_by("-created_at")[:10]
+    )
+    return render(request, "core/tenement_detail.html", {
+        "tenement": tenement,
+        "documents": documents,
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def edit_tenement(request, pk):
+    tenement = get_object_or_404(
+        Tenement.objects.filter(_org_qs_filter(request)), pk=pk
+    )
+    org = getattr(getattr(request.user, "profile", None), "organisation", None)
+    if request.method == "POST":
+        form = TenementForm(request.POST, instance=tenement, organisation=org)
+        if form.is_valid():
+            form.save()
+            log_audit(request.user, AuditLog.ActionType.EDIT, tenement,
+                      f"Edited tenement '{tenement.name}'")
+            messages.success(request, f"Tenement '{tenement.name}' updated.")
+            return redirect("tenement_detail", pk=tenement.pk)
+    else:
+        form = TenementForm(instance=tenement, organisation=org)
+    initial_geojson = tenement.geom.json if tenement.geom else ""
+    return render(request, "core/tenement_form.html", {
+        "form": form,
+        "editing": True,
+        "tenement": tenement,
+        "initial_geojson": initial_geojson,
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def edit_process_geometry(request, pk):
+    process = get_object_or_404(
+        Process.objects.filter(_org_qs_filter(request)), pk=pk
+    )
+    if request.method == "POST":
+        from django.contrib.gis.geos import GEOSGeometry, MultiPolygon, Polygon
+        geojson = request.POST.get("geom_geojson", "").strip()
+        if geojson:
+            try:
+                geom = GEOSGeometry(geojson)
+                if isinstance(geom, Polygon):
+                    geom = MultiPolygon(geom)
+                process.geom = geom
+                process.save()
+                log_audit(request.user, AuditLog.ActionType.EDIT, process,
+                          f"Updated spatial boundary for '{process.name}'")
+                messages.success(request, "Project boundary updated.")
+                return redirect("project_detail", pk=process.pk)
+            except Exception:
+                messages.error(request, "Invalid geometry — please redraw the boundary.")
+        else:
+            messages.error(request, "No geometry provided — please draw a boundary on the map.")
+
+    initial_geojson = process.geom.json if process.geom else ""
+    return render(request, "core/process_geometry_form.html", {
+        "process": process,
+        "initial_geojson": initial_geojson,
+    })
+
+
 # ---------- AI / Map / Utilities ----------
 
 
@@ -1484,7 +1650,7 @@ def report_list_page(request):
         .order_by("-created_at")[:20]
     )
     recent_projects = Process.objects.filter(org_filter).order_by("-created_at")[:20]
-    all_documents = Document.objects.filter(org_filter).select_related("process").order_by("-created_at")
+    all_documents = Document.objects.filter(org_filter, is_latest=True).select_related("process").order_by("-created_at")
 
     return render(request, "core/report_list.html", {
         "recent_reports":  recent_reports,
