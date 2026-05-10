@@ -37,6 +37,18 @@
        class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium {% if request.resolver_match.url_name == 'map_view' %}bg-cyan-100{% endif %}">
       🗺️ <span>Map</span>
     </a>
+    {% if request.user.profile.role in 'ADMIN,DATA_MANAGER,OPERATIONS_MANAGER' or request.user.is_superuser or request.user.profile.can_approve_jorc or request.user.profile.can_approve_valmin %}
+    <a href="{% url 'approval_workflows_list' %}"
+       class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium {% if request.resolver_match.url_name == 'approval_workflows_list' %}bg-cyan-100{% endif %}">
+      ✅ <span>Approvals</span>
+    </a>
+    {% endif %}
+    {% if request.user.is_superuser or request.user.profile.role in 'ADMIN,DATA_MANAGER,OPS_MANAGER' %}
+    <a href="{% url 'audit_log' %}"
+       class="flex items-center gap-2 p-3 rounded-lg hover:bg-cyan-50 text-gray-800 font-medium {% if request.resolver_match.url_name == 'audit_log' %}bg-cyan-100{% endif %}">
+      📋 <span>Audit Log</span>
+    </a>
+    {% endif %}
   </nav>
   <div class="p-4 border-t text-sm text-gray-600 flex flex-col gap-3">
     <div>Logged in as <span class="font-medium">{{ request.user.username }}</span></div>

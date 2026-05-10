@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Audit Log</h1>
+    <p class="text-gray-500 mt-1 text-sm">Full activity trail for compliance review</p>
+  </div>
+  <a href="?action={{ current_action }}&username={{ current_username }}&date_from={{ current_date_from }}&date_to={{ current_date_to }}&obj_type={{ current_obj_type }}&export=csv"
+     class="flex items-center gap-2 px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 font-medium">
+    Export CSV
+  </a>
+</div>
+
+<!-- Filters -->
+<form method="get" class="bg-white rounded-xl shadow p-4 mb-6 flex flex-wrap gap-3 items-end">
+  <div>
+    <label class="block text-xs font-medium text-gray-600 mb-1">Action</label>
+    <select name="action" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400">
+      <option value="">All actions</option>
+      {% for value, label in action_choices %}
+        <option value="{{ value }}" {% if current_action == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs font-medium text-gray-600 mb-1">Username</label>
+    <input type="text" name="username" value="{{ current_username }}"
+           placeholder="Search user…"
+           class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+  </div>
+  <div>
+    <label class="block text-xs font-medium text-gray-600 mb-1">Object Type</label>
+    <input type="text" name="obj_type" value="{{ current_obj_type }}"
+           placeholder="e.g. document"
+           class="border border-gray-300 rounded-lg px-3 py-2 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+  </div>
+  <div>
+    <label class="block text-xs font-medium text-gray-600 mb-1">From</label>
+    <input type="date" name="date_from" value="{{ current_date_from }}"
+           class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400">
+  </div>
+  <div>
+    <label class="block text-xs font-medium text-gray-600 mb-1">To</label>
+    <input type="date" name="date_to" value="{{ current_date_to }}"
+           class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400">
+  </div>
+  <button type="submit" class="px-4 py-2 text-sm bg-cyan-600 text-white rounded-lg hover:bg-cyan-700">Filter</button>
+  <a href="{% url 'audit_log' %}" class="px-4 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200">Clear</a>
+</form>
+
+<!-- Table -->
+{% if page_obj.object_list %}
+<div class="bg-white rounded-xl shadow overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 text-xs">Timestamp</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 text-xs">User</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 text-xs">Action</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 text-xs">Object Type</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 text-xs">Description</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600 text-xs">IP Address</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for entry in page_obj %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-2 text-gray-500 text-xs whitespace-nowrap">{{ entry.timestamp|date:"Y-m-d H:i:s" }}</td>
+        <td class="px-4 py-2 font-medium text-gray-800 text-xs">
+          {% if entry.user %}{{ entry.user.username }}{% else %}<span class="text-gray-400">—</span>{% endif %}
+        </td>
+        <td class="px-4 py-2">
+          <span class="px-2 py-0.5 rounded text-xs font-semibold
+            {% if entry.action == 'CREATE' %}bg-green-100 text-green-700
+            {% elif entry.action == 'EDIT' %}bg-blue-100 text-blue-700
+            {% elif entry.action == 'DELETE' %}bg-red-100 text-red-700
+            {% elif entry.action == 'DOWNLOAD' %}bg-purple-100 text-purple-700
+            {% elif entry.action == 'APPROVE' %}bg-emerald-100 text-emerald-700
+            {% elif entry.action == 'REJECT' %}bg-orange-100 text-orange-700
+            {% else %}bg-gray-100 text-gray-600{% endif %}">
+            {{ entry.get_action_display }}
+          </span>
+        </td>
+        <td class="px-4 py-2 text-gray-500 text-xs">
+          {% if entry.content_type %}{{ entry.content_type.model }}{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-2 text-gray-700 text-xs max-w-xs truncate" title="{{ entry.description }}">
+          {{ entry.description }}
+        </td>
+        <td class="px-4 py-2 text-gray-400 text-xs font-mono">{{ entry.ip_address|default:"—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination -->
+{% if page_obj.has_other_pages %}
+<div class="mt-4 flex justify-center gap-2 text-sm">
+  {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}&action={{ current_action }}&username={{ current_username }}&date_from={{ current_date_from }}&date_to={{ current_date_to }}&obj_type={{ current_obj_type }}"
+       class="px-3 py-1 bg-white border rounded hover:bg-gray-50">Previous</a>
+  {% endif %}
+  <span class="px-3 py-1 text-gray-500">
+    Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    &nbsp;&mdash;&nbsp;{{ page_obj.paginator.count }} entries
+  </span>
+  {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}&action={{ current_action }}&username={{ current_username }}&date_from={{ current_date_from }}&date_to={{ current_date_to }}&obj_type={{ current_obj_type }}"
+       class="px-3 py-1 bg-white border rounded hover:bg-gray-50">Next</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="bg-white rounded-xl shadow p-10 text-center text-gray-400">
+  <p class="text-lg font-medium">No audit log entries found.</p>
+  <p class="text-sm mt-1">Entries appear here as users perform actions in the system.</p>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -7,55 +7,149 @@
 {% block content %}
     <div class="max-w-5xl mx-auto w-full flex-1 flex flex-col">
 
-      <!-- JORC Status bar (only for saved reports) -->
+      <!-- Status bar (only for saved reports) -->
       {% if saved_report %}
-      <div class="flex items-center gap-4 mb-4 p-4 bg-white rounded-xl shadow">
-        <span class="px-3 py-1 rounded-full text-xs font-semibold
-          {% if saved_report.status == 'DRAFT' %}bg-gray-100 text-gray-600
-          {% elif saved_report.status == 'UNDER_REVIEW' %}bg-yellow-100 text-yellow-700
-          {% elif saved_report.status == 'APPROVED' %}bg-green-100 text-green-700
-          {% elif saved_report.status == 'PUBLISHED' %}bg-blue-100 text-blue-700
-          {% endif %}">
-          {{ saved_report.get_status_display }}
-        </span>
+      <div class="mb-4 p-4 bg-white rounded-xl shadow">
+        <div class="flex items-center gap-4 flex-wrap">
+          <span class="px-3 py-1 rounded-full text-xs font-semibold
+            {% if saved_report.status == 'DRAFT' %}bg-gray-100 text-gray-600
+            {% elif saved_report.status == 'UNDER_REVIEW' %}bg-yellow-100 text-yellow-700
+            {% elif saved_report.status == 'APPROVED' %}bg-green-100 text-green-700
+            {% elif saved_report.status == 'PUBLISHED' %}bg-blue-100 text-blue-700
+            {% endif %}">
+            {{ saved_report.get_status_display }}
+          </span>
 
-        {% if saved_report.status == 'APPROVED' or saved_report.status == 'PUBLISHED' %}
-          <span class="text-sm text-gray-500">🔒 This report is locked and cannot be edited.</span>
-        {% endif %}
-
-        <div class="ml-auto flex gap-2">
-          {% if saved_report.status == 'DRAFT' %}
-            <form method="post" action="{% url 'submit_report_for_review' saved_report.pk %}">
-              {% csrf_token %}
-              <button class="px-4 py-2 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600">
-                Submit for Review
-              </button>
-            </form>
+          {% if saved_report.approval_workflow %}
+            <span class="px-2 py-0.5 rounded text-xs font-semibold
+              {% if saved_report.approval_workflow.workflow_type == 'JORC' %}bg-cyan-100 text-cyan-700
+              {% elif saved_report.approval_workflow.workflow_type == 'VALMIN' %}bg-purple-100 text-purple-700
+              {% else %}bg-gray-100 text-gray-500{% endif %}">
+              {{ saved_report.approval_workflow.get_workflow_type_display }}
+            </span>
+            {% if saved_report.approval_workflow.submitted_by %}
+              <span class="text-xs text-gray-400">
+                Submitted by {{ saved_report.approval_workflow.submitted_by.username }}
+              </span>
+            {% endif %}
           {% endif %}
 
-          {% if saved_report.status == 'UNDER_REVIEW' and request.user.profile.can_approve_jorc %}
-            <form method="post" action="{% url 'approve_report' saved_report.pk %}">
-              {% csrf_token %}
-              <button class="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700">
-                Approve
-              </button>
-            </form>
-            <form method="post" action="{% url 'reject_report' saved_report.pk %}">
-              {% csrf_token %}
-              <button class="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">
-                Return to Draft
-              </button>
-            </form>
+          {% if saved_report.status == 'APPROVED' or saved_report.status == 'PUBLISHED' %}
+            <span class="text-sm text-gray-500">This report is locked and cannot be edited.</span>
           {% endif %}
 
-          {% if saved_report.status == 'APPROVED' and request.user.profile.can_approve_jorc %}
+          <!-- Workflow action buttons -->
+          <div class="ml-auto flex gap-2 flex-wrap items-center">
+
+            <!-- Submit for Review (DRAFT only) — expands to show options -->
+            {% if saved_report.status == 'DRAFT' %}
+            <details class="relative">
+              <summary class="cursor-pointer list-none">
+                <button type="button" class="px-4 py-2 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600">
+                  Submit for Review
+                </button>
+              </summary>
+              <div class="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-72">
+                <form method="post" action="{% url 'submit_report_for_review' saved_report.pk %}">
+                  {% csrf_token %}
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Compliance Framework</label>
+                  <select name="workflow_type"
+                          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+                    <option value="JORC">JORC Compliance</option>
+                    <option value="VALMIN">VALMIN Compliance</option>
+                    <option value="GENERAL">General Approval</option>
+                  </select>
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Submission Notes</label>
+                  <textarea name="submission_notes" rows="3"
+                            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                            placeholder="Optional notes for the reviewer…"></textarea>
+                  <button type="submit"
+                          class="w-full px-4 py-2 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600">
+                    Confirm Submission
+                  </button>
+                </form>
+              </div>
+            </details>
+            {% endif %}
+
+            <!-- JORC Approve / Return to Draft -->
+            {% if saved_report.status == 'UNDER_REVIEW' and request.user.profile.can_approve_jorc and saved_report.approval_workflow.workflow_type != 'VALMIN' %}
+            <details class="relative">
+              <summary class="cursor-pointer list-none">
+                <button type="button" class="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700">Approve (JORC)</button>
+              </summary>
+              <div class="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64">
+                <form method="post" action="{% url 'approve_report' saved_report.pk %}">
+                  {% csrf_token %}
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Approval Notes</label>
+                  <textarea name="approval_notes" rows="3"
+                            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-green-400"
+                            placeholder="Optional notes…"></textarea>
+                  <button type="submit" class="w-full px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700">Confirm Approval</button>
+                </form>
+              </div>
+            </details>
+            <details class="relative">
+              <summary class="cursor-pointer list-none">
+                <button type="button" class="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">Return to Draft</button>
+              </summary>
+              <div class="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64">
+                <form method="post" action="{% url 'reject_report' saved_report.pk %}">
+                  {% csrf_token %}
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Rejection Notes</label>
+                  <textarea name="approval_notes" rows="3"
+                            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-red-400"
+                            placeholder="Reason for rejection…"></textarea>
+                  <button type="submit" class="w-full px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">Confirm Rejection</button>
+                </form>
+              </div>
+            </details>
+            {% endif %}
+
+            <!-- VALMIN Approve / Return to Draft -->
+            {% if saved_report.status == 'UNDER_REVIEW' and request.user.profile.can_approve_valmin and saved_report.approval_workflow.workflow_type == 'VALMIN' %}
+            <details class="relative">
+              <summary class="cursor-pointer list-none">
+                <button type="button" class="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700">Approve (VALMIN)</button>
+              </summary>
+              <div class="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64">
+                <form method="post" action="{% url 'approve_report' saved_report.pk %}">
+                  {% csrf_token %}
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Approval Notes</label>
+                  <textarea name="approval_notes" rows="3"
+                            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                            placeholder="Optional notes…"></textarea>
+                  <button type="submit" class="w-full px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700">Confirm Approval</button>
+                </form>
+              </div>
+            </details>
+            <details class="relative">
+              <summary class="cursor-pointer list-none">
+                <button type="button" class="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">Return to Draft</button>
+              </summary>
+              <div class="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64">
+                <form method="post" action="{% url 'reject_report' saved_report.pk %}">
+                  {% csrf_token %}
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Rejection Notes</label>
+                  <textarea name="approval_notes" rows="3"
+                            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-red-400"
+                            placeholder="Reason for rejection…"></textarea>
+                  <button type="submit" class="w-full px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">Confirm Rejection</button>
+                </form>
+              </div>
+            </details>
+            {% endif %}
+
+            <!-- Publish (APPROVED only) -->
+            {% if saved_report.status == 'APPROVED' and request.user.profile.can_approve_jorc %}
             <form method="post" action="{% url 'publish_report' saved_report.pk %}">
               {% csrf_token %}
               <button class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
                 Publish
               </button>
             </form>
-          {% endif %}
+            {% endif %}
+          </div>
         </div>
       </div>
       {% endif %}
@@ -151,6 +245,41 @@
         <textarea id="md-editor">{{ markdown_content }}</textarea>
       </div>
 
+      <!-- Source Documents panel (saved reports only) -->
+      {% if saved_report and saved_report.source_documents.exists %}
+      <div class="mt-4">
+        <details class="bg-white rounded-xl shadow">
+          <summary class="px-4 py-3 cursor-pointer flex items-center justify-between text-sm font-semibold text-gray-700 select-none">
+            <span>Source Documents ({{ saved_report.source_documents.count }})</span>
+            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </summary>
+          <div class="border-t border-gray-100 px-4 py-3">
+            <p class="text-xs text-gray-500 mb-3">
+              The following documents were used as context when this report was generated.
+              They will be included as a Sources section in PDF and DOCX exports.
+            </p>
+            <ol class="space-y-1">
+              {% for doc in saved_report.source_documents.all %}
+              <li class="flex items-start gap-2 text-sm">
+                <span class="text-gray-400 shrink-0 mt-0.5">{{ forloop.counter }}.</span>
+                <div>
+                  <a href="{% url 'document_detail' doc.pk %}"
+                     class="text-cyan-600 hover:underline font-medium">{{ doc.title }}</a>
+                  <span class="text-gray-400 text-xs ml-2">
+                    {{ doc.doc_type }}{% if doc.timestamp %} &mdash; {{ doc.timestamp|date:"Y-m-d" }}{% endif %}
+                    {% if doc.confidentiality %} &mdash; {{ doc.confidentiality }}{% endif %}
+                  </span>
+                </div>
+              </li>
+              {% endfor %}
+            </ol>
+          </div>
+        </details>
+      </div>
+      {% endif %}
+
     </div>
 <!-- Hidden form for file downloads (POST with CSRF) -->
 <form id="form-export" method="POST" action="{{ export_url }}">
@@ -158,6 +287,7 @@
   <input type="hidden" name="format"     id="export-format">
   <input type="hidden" name="content_md" id="export-content">
   <input type="hidden" name="title"      id="export-title">
+  <input type="hidden" name="report_id"  value="{{ saved_report.id|default:'' }}">
 </form>
 
 <script>

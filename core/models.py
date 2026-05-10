@@ -548,6 +548,9 @@ class UserProfile(models.Model):
         ADMIN = "ADMIN", _("Administrator")
         VIEWER = "VIEWER", _("Viewer Only")
 
+        # Governance (cross-cutting)
+        COMPETENT_PERSON = "COMPETENT_PERSON", _("Competent Person")
+
     class ClearanceLevel(models.TextChoices):
         PUBLIC = "PUBLIC", _("Public")
         INTERNAL = "INTERNAL", _("Internal")
@@ -684,6 +687,13 @@ class SavedReport(models.Model):
         max_length=16,
         choices=Status.choices,
         default=Status.DRAFT,
+    )
+    source_documents = models.ManyToManyField(
+        'Document', blank=True, related_name='cited_in_reports'
+    )
+    approval_workflow = models.OneToOneField(
+        'ApprovalWorkflow', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='report'
     )
 
     class Meta:
