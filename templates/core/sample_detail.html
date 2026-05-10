@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="mb-4 text-sm text-gray-600">
+  <a href="{% url 'samples' %}" class="hover:text-cyan-600">Samples</a>
+  <span class="mx-2">/</span>
+  <span class="text-gray-900">{{ sample.name }}</span>
+</div>
+
+<div class="bg-white rounded-xl shadow-lg overflow-hidden max-w-3xl mb-6">
+  <div class="bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-6">
+    <h1 class="text-3xl font-bold mb-1">{{ sample.name }}</h1>
+    <p class="text-emerald-100 text-sm">
+      {{ sample.get_sample_type_display|default:"Sample" }}
+      {% if sample.sample_number %} &mdash; #{{ sample.sample_number }}{% endif %}
+    </p>
+  </div>
+
+  <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5 border-b">
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Project</p>
+      <p class="font-medium">
+        <a href="{% url 'project_detail' sample.process.pk %}" class="text-cyan-600 hover:underline">{{ sample.process.name }}</a>
+      </p>
+    </div>
+    {% if sample.prospect %}
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Prospect</p>
+      <p class="font-medium">
+        <a href="{% url 'prospect_detail' sample.prospect.pk %}" class="text-cyan-600 hover:underline">{{ sample.prospect.name }}</a>
+      </p>
+    </div>
+    {% endif %}
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Type</p>
+      <p class="font-medium">{{ sample.get_sample_type_display|default:"—" }}</p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Sample Number</p>
+      <p class="font-medium">{{ sample.sample_number|default:"—" }}</p>
+    </div>
+    {% if sample.depth is not None %}
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Depth</p>
+      <p class="font-medium">{{ sample.depth }} m</p>
+    </div>
+    {% endif %}
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Collected By</p>
+      <p class="font-medium">{{ sample.collected_by|default:"—" }}</p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Collection Date</p>
+      <p class="font-medium">{{ sample.collected_at|date:"M d, Y"|default:"—" }}</p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Laboratory</p>
+      <p class="font-medium">{{ sample.laboratory|default:"—" }}</p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Recorded</p>
+      <p class="font-medium">{{ sample.created_at|date:"M d, Y H:i" }}</p>
+    </div>
+  </div>
+
+  {% if sample.description %}
+  <div class="p-6 border-b">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Description</h2>
+    <p class="text-gray-800 leading-relaxed">{{ sample.description }}</p>
+  </div>
+  {% endif %}
+
+  <div class="p-6 bg-gray-50 flex gap-3">
+    <a href="{% url 'samples' %}" class="text-cyan-600 hover:underline text-sm">← Back to Samples</a>
+    {% if sample.prospect %}
+    <a href="{% url 'prospect_detail' sample.prospect.pk %}" class="text-cyan-600 hover:underline text-sm">View Prospect</a>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

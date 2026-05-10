@@ -1,6 +1,6 @@
 from django import forms
 from django.forms import ModelForm
-from .models import Document, Process, Prospect, Tenement
+from .models import Document, Process, Prospect, Tenement, Sample, Survey
 from .tagging import TAG_CHOICES
 
 class DocumentForm(ModelForm):
@@ -203,6 +203,7 @@ class ProspectForm(ModelForm):
         max_digits=10, decimal_places=7, required=True,
         widget=forms.HiddenInput(),
     )
+    area_geom_geojson = forms.CharField(widget=forms.HiddenInput(), required=False)
 
     class Meta:
         model = Prospect
@@ -237,9 +238,7 @@ class ProspectForm(ModelForm):
         self.fields["process"].empty_label = "Select a project..."
 
     def _post_clean(self):
-        from django.contrib.gis.geos import Point
-        # Pre-populate fields that are set by the view (not form fields) so that
-        # Prospect.save() → full_clean() (called with no exclusions) does not fail.
+        from django.contrib.gis.geos import Point, GEOSGeometry
         if self._organisation is not None:
             self.instance.organisation = self._organisation
         lat = (self.cleaned_data or {}).get("latitude")
@@ -248,4 +247,121 @@ class ProspectForm(ModelForm):
             self.instance.geom = Point(float(lng), float(lat), srid=4326)
         elif not self.instance.geom:
             self.instance.geom = Point(0.0, 0.0, srid=4326)
+        poly_json = (self.cleaned_data or {}).get("area_geom_geojson", "").strip()
+        if poly_json:
+            try:
+                self.instance.area_geom = GEOSGeometry(poly_json, srid=4326)
+            except Exception:
+                pass  # optional field — silently skip invalid geometry
+        else:
+            # Empty string means "clear the area boundary"
+            if not self.instance.pk:
+                self.instance.area_geom = None
+        super()._post_clean()
+
+
+_DATE_INPUT = forms.DateInput(attrs={"type": "date", "class": _INPUT})
+
+
+class SampleForm(ModelForm):
+    collected_at = forms.DateField(
+        required=False,
+        widget=_DATE_INPUT,
+        label="Collection Date",
+    )
+
+    class Meta:
+        model = Sample
+        fields = [
+            "name", "process", "prospect", "sample_type", "sample_number",
+            "description", "collected_by", "collected_at", "laboratory", "depth",
+        ]
+        widgets = {
+            "name": forms.TextInput(attrs={
+                "class": _INPUT, "placeholder": "e.g. RC001-CHIP",
+            }),
+            "sample_number": forms.TextInput(attrs={"class": _INPUT}),
+            "collected_by": forms.TextInput(attrs={"class": _INPUT}),
+            "laboratory": forms.TextInput(attrs={"class": _INPUT}),
+            "depth": forms.NumberInput(attrs={"class": _INPUT, "step": "0.01"}),
+            "description": forms.Textarea(attrs={"class": _INPUT, "rows": 4}),
+            "sample_type": forms.Select(attrs={"class": _INPUT}),
+        }
+
+    def __init__(self, *args, organisation=None, initial_prospect=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._organisation = organisation
+        if organisation:
+            self.fields["process"].queryset = Process.objects.filter(
+                organisation=organisation
+            ).order_by("name")
+            self.fields["prospect"].queryset = Prospect.objects.filter(
+                organisation=organisation
+            ).order_by("name")
+        else:
+            self.fields["process"].queryset = Process.objects.none()
+            self.fields["prospect"].queryset = Prospect.objects.none()
+        if initial_prospect:
+            self.fields["prospect"].initial = initial_prospect
+        self.fields["process"].label = "Project"
+        self.fields["process"].widget.attrs["class"] = _INPUT
+        self.fields["prospect"].required = False
+        self.fields["prospect"].empty_label = "— None —"
+        self.fields["prospect"].widget.attrs["class"] = _INPUT
+
+    def _post_clean(self):
+        if self._organisation is not None:
+            self.instance.organisation = self._organisation
+        super()._post_clean()
+
+
+class SurveyForm(ModelForm):
+    geom_geojson = forms.CharField(widget=forms.HiddenInput(), required=False)
+    date_from = forms.DateField(required=False, widget=_DATE_INPUT, label="Date From")
+    date_to   = forms.DateField(required=False, widget=_DATE_INPUT, label="Date To")
+
+    class Meta:
+        model = Survey
+        fields = [
+            "name", "process", "prospect", "survey_type",
+            "contractor", "date_from", "date_to", "description",
+        ]
+        widgets = {
+            "name": forms.TextInput(attrs={"class": _INPUT, "placeholder": "e.g. VTEM Survey 2024"}),
+            "contractor": forms.TextInput(attrs={"class": _INPUT}),
+            "description": forms.Textarea(attrs={"class": _INPUT, "rows": 4}),
+            "survey_type": forms.Select(attrs={"class": _INPUT}),
+        }
+
+    def __init__(self, *args, organisation=None, initial_prospect=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._organisation = organisation
+        if organisation:
+            self.fields["process"].queryset = Process.objects.filter(
+                organisation=organisation
+            ).order_by("name")
+            self.fields["prospect"].queryset = Prospect.objects.filter(
+                organisation=organisation
+            ).order_by("name")
+        else:
+            self.fields["process"].queryset = Process.objects.none()
+            self.fields["prospect"].queryset = Prospect.objects.none()
+        if initial_prospect:
+            self.fields["prospect"].initial = initial_prospect
+        self.fields["process"].label = "Project"
+        self.fields["process"].widget.attrs["class"] = _INPUT
+        self.fields["prospect"].required = False
+        self.fields["prospect"].empty_label = "— None —"
+        self.fields["prospect"].widget.attrs["class"] = _INPUT
+
+    def _post_clean(self):
+        from django.contrib.gis.geos import GEOSGeometry
+        if self._organisation is not None:
+            self.instance.organisation = self._organisation
+        geojson = (self.cleaned_data or {}).get("geom_geojson", "").strip()
+        if geojson:
+            try:
+                self.instance.geom = GEOSGeometry(geojson, srid=4326)
+            except Exception:
+                self.add_error("geom_geojson", "Invalid geometry — please redraw the survey area.")
         super()._post_clean()

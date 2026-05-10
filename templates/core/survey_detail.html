@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block head_extra %}
+<link href="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<div class="mb-4 text-sm text-gray-600">
+  <a href="{% url 'surveys' %}" class="hover:text-cyan-600">Surveys</a>
+  <span class="mx-2">/</span>
+  <span class="text-gray-900">{{ survey.name }}</span>
+</div>
+
+<div class="bg-white rounded-xl shadow-lg overflow-hidden max-w-3xl mb-6">
+  <div class="bg-gradient-to-r from-cyan-600 to-teal-600 text-white p-6">
+    <h1 class="text-3xl font-bold mb-1">{{ survey.name }}</h1>
+    <p class="text-cyan-100 text-sm">{{ survey.get_survey_type_display|default:"Survey" }}</p>
+  </div>
+
+  <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5 border-b">
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Project</p>
+      <p class="font-medium">
+        <a href="{% url 'project_detail' survey.process.pk %}" class="text-cyan-600 hover:underline">{{ survey.process.name }}</a>
+      </p>
+    </div>
+    {% if survey.prospect %}
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Prospect</p>
+      <p class="font-medium">
+        <a href="{% url 'prospect_detail' survey.prospect.pk %}" class="text-cyan-600 hover:underline">{{ survey.prospect.name }}</a>
+      </p>
+    </div>
+    {% endif %}
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Type</p>
+      <p class="font-medium">{{ survey.get_survey_type_display|default:"—" }}</p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Contractor</p>
+      <p class="font-medium">{{ survey.contractor|default:"—" }}</p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Date From</p>
+      <p class="font-medium">{{ survey.date_from|date:"M d, Y"|default:"—" }}</p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Date To</p>
+      <p class="font-medium">{{ survey.date_to|date:"M d, Y"|default:"—" }}</p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Coverage</p>
+      <p class="font-medium">
+        {% if survey.geom %}
+          <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">Area mapped</span>
+        {% else %}
+          <span class="text-gray-400">No boundary defined</span>
+        {% endif %}
+      </p>
+    </div>
+    <div>
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Recorded</p>
+      <p class="font-medium">{{ survey.created_at|date:"M d, Y H:i" }}</p>
+    </div>
+  </div>
+
+  {% if survey.description %}
+  <div class="p-6 border-b">
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Description</h2>
+    <p class="text-gray-800 leading-relaxed">{{ survey.description }}</p>
+  </div>
+  {% endif %}
+
+  <div class="p-6 bg-gray-50 flex gap-3">
+    <a href="{% url 'surveys' %}" class="text-cyan-600 hover:underline text-sm">← Back to Surveys</a>
+    {% if survey.prospect %}
+    <a href="{% url 'prospect_detail' survey.prospect.pk %}" class="text-cyan-600 hover:underline text-sm">View Prospect</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if survey.geom %}
+<!-- Coverage Map -->
+<div class="bg-white rounded-xl shadow max-w-3xl p-6">
+  <h2 class="text-lg font-semibold mb-4">Coverage Area</h2>
+  <div id="survey-detail-map" class="rounded-lg border border-gray-200" style="height: 380px;"></div>
+</div>
+
+<script>
+const SURVEY_GEOJSON = {{ area_geom_geojson|safe }};
+
+const surveyMap = new maplibregl.Map({
+    container: 'survey-detail-map',
+    style: {
+        version: 8,
+        sources: {
+            'satellite': { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: '© Esri' },
+            'labels':    { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 }
+        },
+        layers: [
+            { id: 'sat', type: 'raster', source: 'satellite', minzoom: 0, maxzoom: 22 },
+            { id: 'lbl', type: 'raster', source: 'labels',    minzoom: 0, maxzoom: 22 }
+        ]
+    },
+    center: [133.7751, -25.2744],
+    zoom: 4
+});
+surveyMap.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+surveyMap.on('load', () => {
+    if (SURVEY_GEOJSON) {
+        surveyMap.addSource('survey-area', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: SURVEY_GEOJSON, properties: {} }] }
+        });
+        surveyMap.addLayer({ id: 'survey-fill',    type: 'fill', source: 'survey-area', paint: { 'fill-color': '#06b6d4', 'fill-opacity': 0.25 } });
+        surveyMap.addLayer({ id: 'survey-outline', type: 'line', source: 'survey-area', paint: { 'line-color': '#06b6d4', 'line-width': 2 } });
+
+        // Fit to bounds
+        const coords = SURVEY_GEOJSON.coordinates[0];
+        let minLng = coords[0][0], maxLng = coords[0][0], minLat = coords[0][1], maxLat = coords[0][1];
+        coords.forEach(c => { minLng = Math.min(minLng, c[0]); maxLng = Math.max(maxLng, c[0]); minLat = Math.min(minLat, c[1]); maxLat = Math.max(maxLat, c[1]); });
+        surveyMap.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 50 });
+    }
+});
+</script>
+{% endif %}
+
+{% endblock %}

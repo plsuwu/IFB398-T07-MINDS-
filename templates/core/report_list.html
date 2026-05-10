@@ -206,7 +206,34 @@
 
           <!-- Recent Reports -->
           <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <h2 class="text-lg font-semibold text-gray-900 mb-4">Recent Reports</h2>
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="text-lg font-semibold text-gray-900">Recent Reports</h2>
+              <a href="{% url 'all_reports_history' %}" class="text-xs text-cyan-600 hover:underline">View all →</a>
+            </div>
+
+            <!-- Report search -->
+            <form method="get" action="" class="mb-3">
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  name="q"
+                  value="{{ q }}"
+                  placeholder="Search reports..."
+                  class="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-cyan-500"
+                >
+                <button type="submit"
+                        class="px-3 py-1.5 bg-cyan-600 text-white rounded-lg text-sm hover:bg-cyan-700">
+                  Go
+                </button>
+              </div>
+              {% if q %}
+              <div class="mt-1 flex items-center gap-2">
+                <span class="text-xs text-gray-500">Results for "{{ q }}"</span>
+                <a href="{% url 'report_list' %}" class="text-xs text-cyan-600 hover:underline">Clear</a>
+              </div>
+              {% endif %}
+            </form>
+
             <div class="space-y-2">
               {% for report in recent_reports %}
               <a href="{% url 'saved_report_editor' report.id %}"
@@ -215,7 +242,9 @@
                 <p class="text-xs text-gray-500">{{ report.created_at|date:"d M Y" }}{% if report.process %} &mdash; {{ report.process.name }}{% endif %}</p>
               </a>
               {% empty %}
-              <p class="text-sm text-gray-500">No saved reports yet.</p>
+              <p class="text-sm text-gray-500">
+                {% if q %}No reports matched "{{ q }}".{% else %}No saved reports yet.{% endif %}
+              </p>
               {% endfor %}
             </div>
           </div>

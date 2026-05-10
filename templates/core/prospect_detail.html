@@ -84,8 +84,9 @@
 <div class="bg-white rounded-xl shadow max-w-4xl p-6 mb-6">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-lg font-semibold">Spatial View</h2>
-    <div class="flex items-center gap-4 text-xs text-gray-500">
+    <div class="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
       <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-red-600"></span> Prospect</span>
+      {% if prospect.area_geom %}<span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-emerald-500 opacity-70"></span> Area</span>{% endif %}
       <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-purple-600 opacity-70"></span> Tenements</span>
       <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-full bg-blue-600"></span> Drillholes</span>
     </div>
@@ -221,6 +222,103 @@
   {% endif %}
 </div>
 
+<!-- Samples Section -->
+<div class="bg-white rounded-xl shadow max-w-4xl p-6 mt-6">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="text-lg font-semibold">Samples</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Field samples collected at this prospect</p>
+    </div>
+    <a href="{% url 'create_sample' %}?prospect={{ prospect.pk }}"
+       class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+      + Add Sample
+    </a>
+  </div>
+
+  {% if samples %}
+    <table class="w-full text-sm">
+      <thead class="text-left text-gray-500 border-b">
+        <tr>
+          <th class="pb-2">Sample</th>
+          <th class="pb-2">Type</th>
+          <th class="pb-2">Number</th>
+          <th class="pb-2">Collected</th>
+          <th class="pb-2">Lab</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for sample in samples %}
+        <tr>
+          <td class="py-2 font-medium">
+            <a href="{% url 'sample_detail' sample.pk %}" class="text-cyan-700 hover:underline">{{ sample.name }}</a>
+          </td>
+          <td class="py-2 text-gray-500">{{ sample.get_sample_type_display|default:"—" }}</td>
+          <td class="py-2 text-gray-500">{{ sample.sample_number|default:"—" }}</td>
+          <td class="py-2 text-gray-500">{{ sample.collected_at|date:"M d, Y"|default:"—" }}</td>
+          <td class="py-2 text-gray-500">{{ sample.laboratory|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-gray-400 text-sm">No samples recorded. Use the button above to add one.</p>
+  {% endif %}
+</div>
+
+<!-- Surveys Section -->
+<div class="bg-white rounded-xl shadow max-w-4xl p-6 mt-6">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="text-lg font-semibold">Surveys</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Geophysical and geological surveys for this prospect</p>
+    </div>
+    <a href="{% url 'create_survey' %}?prospect={{ prospect.pk }}"
+       class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+      + Add Survey
+    </a>
+  </div>
+
+  {% if surveys %}
+    <table class="w-full text-sm">
+      <thead class="text-left text-gray-500 border-b">
+        <tr>
+          <th class="pb-2">Survey</th>
+          <th class="pb-2">Type</th>
+          <th class="pb-2">Contractor</th>
+          <th class="pb-2">Dates</th>
+          <th class="pb-2">Coverage</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for survey in surveys %}
+        <tr>
+          <td class="py-2 font-medium">
+            <a href="{% url 'survey_detail' survey.pk %}" class="text-cyan-700 hover:underline">{{ survey.name }}</a>
+          </td>
+          <td class="py-2 text-gray-500">{{ survey.get_survey_type_display|default:"—" }}</td>
+          <td class="py-2 text-gray-500">{{ survey.contractor|default:"—" }}</td>
+          <td class="py-2 text-gray-500">
+            {% if survey.date_from %}{{ survey.date_from|date:"M d, Y" }}{% endif %}
+            {% if survey.date_from and survey.date_to %} – {% endif %}
+            {% if survey.date_to %}{{ survey.date_to|date:"M d, Y" }}{% endif %}
+            {% if not survey.date_from and not survey.date_to %}—{% endif %}
+          </td>
+          <td class="py-2">
+            {% if survey.geom %}
+              <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">Mapped</span>
+            {% else %}
+              <span class="text-gray-400 text-xs">No boundary</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-gray-400 text-sm">No surveys recorded. Use the button above to add one.</p>
+  {% endif %}
+</div>
+
 <script>
 const prospectMap = new maplibregl.Map({
     container: 'prospect-detail-map',
@@ -290,6 +388,17 @@ prospectMap.on('load', () => {
             'circle-stroke-color': '#ffffff'
         }
     });
+
+    // Prospect area boundary (optional polygon)
+    const AREA_GEOJSON = {{ area_geom_geojson|safe }};
+    if (AREA_GEOJSON) {
+        prospectMap.addSource('area-boundary', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: AREA_GEOJSON, properties: {} }] }
+        });
+        prospectMap.addLayer({ id: 'area-fill',    type: 'fill', source: 'area-boundary', paint: { 'fill-color': '#10b981', 'fill-opacity': 0.15 } });
+        prospectMap.addLayer({ id: 'area-outline', type: 'line', source: 'area-boundary', paint: { 'line-color': '#10b981', 'line-width': 2 } });
+    }
 
     // Prospect location marker
     {% if prospect.geom %}

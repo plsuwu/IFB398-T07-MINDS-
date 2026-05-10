@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-3xl font-bold">Surveys</h1>
+    <p class="text-gray-500 text-sm mt-1">Geophysical and geological surveys</p>
+  </div>
+  <a href="{% url 'create_survey' %}"
+     class="px-4 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700">
+    + New Survey
+  </a>
+</div>
+
+<div class="bg-white rounded-xl shadow overflow-hidden">
+  {% if page.object_list %}
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-left text-xs text-gray-500 uppercase tracking-wide border-b">
+        <tr>
+          <th class="px-4 py-3">Survey</th>
+          <th class="px-4 py-3">Type</th>
+          <th class="px-4 py-3">Project</th>
+          <th class="px-4 py-3">Prospect</th>
+          <th class="px-4 py-3">Contractor</th>
+          <th class="px-4 py-3">Dates</th>
+          <th class="px-4 py-3">Coverage</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for survey in page.object_list %}
+        <tr class="hover:bg-gray-50 transition">
+          <td class="px-4 py-3 font-medium">
+            <a href="{% url 'survey_detail' survey.pk %}" class="text-cyan-700 hover:underline">{{ survey.name }}</a>
+          </td>
+          <td class="px-4 py-3 text-gray-600">{{ survey.get_survey_type_display|default:"—" }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ survey.process.name|default:"—" }}</td>
+          <td class="px-4 py-3 text-gray-600">
+            {% if survey.prospect %}
+              <a href="{% url 'prospect_detail' survey.prospect.pk %}" class="text-cyan-600 hover:underline">{{ survey.prospect.name }}</a>
+            {% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-gray-500">{{ survey.contractor|default:"—" }}</td>
+          <td class="px-4 py-3 text-gray-500 text-xs">
+            {% if survey.date_from %}{{ survey.date_from|date:"M Y" }}{% endif %}
+            {% if survey.date_from and survey.date_to %} – {% endif %}
+            {% if survey.date_to %}{{ survey.date_to|date:"M Y" }}{% endif %}
+            {% if not survey.date_from and not survey.date_to %}—{% endif %}
+          </td>
+          <td class="px-4 py-3">
+            {% if survey.geom %}
+              <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">Mapped</span>
+            {% else %}
+              <span class="text-gray-400 text-xs">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if page.has_other_pages %}
+    <div class="flex items-center justify-between px-4 py-3 border-t text-sm text-gray-500">
+      <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      <div class="flex gap-2">
+        {% if page.has_previous %}
+          <a href="?page={{ page.previous_page_number }}" class="px-3 py-1 border rounded hover:bg-gray-50">Previous</a>
+        {% endif %}
+        {% if page.has_next %}
+          <a href="?page={{ page.next_page_number }}" class="px-3 py-1 border rounded hover:bg-gray-50">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+  {% else %}
+    <div class="px-6 py-12 text-center text-gray-400">
+      <p class="text-lg font-medium mb-2">No surveys yet</p>
+      <p class="text-sm mb-4">Record geophysical and geological surveys to build your data coverage.</p>
+      <a href="{% url 'create_survey' %}" class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+        Create First Survey
+      </a>
+    </div>
+  {% endif %}
+</div>
+
+{% endblock %}
