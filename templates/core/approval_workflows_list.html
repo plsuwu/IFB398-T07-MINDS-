@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Approval Workflows</h1>
+    <p class="text-gray-500 mt-1 text-sm">JORC and VALMIN compliance review queue</p>
+  </div>
+  <a href="{% url 'all_reports_history' %}" class="text-sm text-cyan-600 hover:underline">View all reports</a>
+</div>
+
+<!-- Filters -->
+<form method="get" class="bg-white rounded-xl shadow p-4 mb-6 flex flex-wrap gap-3 items-end">
+  <div>
+    <label class="block text-xs font-medium text-gray-600 mb-1">Status</label>
+    <select name="status" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400">
+      <option value="">All statuses</option>
+      {% for value, label in status_choices %}
+        <option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs font-medium text-gray-600 mb-1">Workflow Type</label>
+    <select name="workflow_type" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400">
+      <option value="">All types</option>
+      {% for value, label in workflow_type_choices %}
+        <option value="{{ value }}" {% if current_workflow_type == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="px-4 py-2 text-sm bg-cyan-600 text-white rounded-lg hover:bg-cyan-700">Filter</button>
+  <a href="{% url 'approval_workflows_list' %}" class="px-4 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200">Clear</a>
+</form>
+
+<!-- Table -->
+{% if page_obj.object_list %}
+<div class="bg-white rounded-xl shadow overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600">Report</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600">Type</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600">Submitted By</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600">Submitted</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
+        <th class="px-4 py-3 text-left font-semibold text-gray-600">Reviewed By</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for wf in page_obj %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-medium text-gray-900">
+          {% if wf.report %}
+            {{ wf.report.title }}
+          {% else %}
+            <span class="text-gray-400 italic">Report deleted</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3">
+          <span class="px-2 py-0.5 rounded text-xs font-semibold
+            {% if wf.workflow_type == 'JORC' %}bg-cyan-100 text-cyan-700
+            {% elif wf.workflow_type == 'VALMIN' %}bg-purple-100 text-purple-700
+            {% else %}bg-gray-100 text-gray-600{% endif %}">
+            {{ wf.get_workflow_type_display }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-gray-600">{{ wf.submitted_by.username }}</td>
+        <td class="px-4 py-3 text-gray-500 text-xs">{{ wf.submitted_at|date:"Y-m-d H:i" }}</td>
+        <td class="px-4 py-3">
+          <span class="px-2 py-0.5 rounded text-xs font-semibold
+            {% if wf.status == 'PENDING' %}bg-yellow-100 text-yellow-700
+            {% elif wf.status == 'APPROVED' %}bg-green-100 text-green-700
+            {% elif wf.status == 'REJECTED' %}bg-red-100 text-red-700
+            {% else %}bg-orange-100 text-orange-700{% endif %}">
+            {{ wf.get_status_display }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-gray-500 text-xs">
+          {% if wf.approved_by %}{{ wf.approved_by.username }}{% else %}—{% endif %}
+          {% if wf.reviewed_at %}<br>{{ wf.reviewed_at|date:"Y-m-d" }}{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right">
+          {% if wf.report %}
+            <a href="{% url 'saved_report_editor' wf.report.pk %}"
+               class="text-xs text-cyan-600 hover:underline font-medium">Open Report</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% if wf.submission_notes or wf.approval_notes %}
+      <tr class="bg-gray-50">
+        <td colspan="7" class="px-4 py-2 text-xs text-gray-500">
+          {% if wf.submission_notes %}<span class="font-medium">Submission notes:</span> {{ wf.submission_notes }}{% endif %}
+          {% if wf.approval_notes %}&nbsp;&nbsp;<span class="font-medium">Review notes:</span> {{ wf.approval_notes }}{% endif %}
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination -->
+{% if page_obj.has_other_pages %}
+<div class="mt-4 flex justify-center gap-2 text-sm">
+  {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}&status={{ current_status }}&workflow_type={{ current_workflow_type }}"
+       class="px-3 py-1 bg-white border rounded hover:bg-gray-50">Previous</a>
+  {% endif %}
+  <span class="px-3 py-1 text-gray-500">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+  {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}&status={{ current_status }}&workflow_type={{ current_workflow_type }}"
+       class="px-3 py-1 bg-white border rounded hover:bg-gray-50">Next</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="bg-white rounded-xl shadow p-10 text-center text-gray-400">
+  <p class="text-lg font-medium">No approval workflows found.</p>
+  <p class="text-sm mt-1">Workflows appear here when reports are submitted for JORC or VALMIN review.</p>
+</div>
+{% endif %}
+
+{% endblock %}

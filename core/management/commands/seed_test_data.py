@@ -355,6 +355,35 @@ class Command(BaseCommand):
                 )
                 users.append(user)
 
+        # Create one Competent Person per org (named account for JORC governance)
+        for org in orgs:
+            cp_username = f"competent.person.{org.name.lower().replace(' ', '_')[:20]}"
+            cp_user, created = User.objects.get_or_create(
+                username=cp_username[:150],
+                defaults=dict(
+                    email=f"{cp_username}@example.com",
+                    first_name="Competent",
+                    last_name="Person",
+                    is_staff=True,
+                ),
+            )
+            if created:
+                cp_user.set_password("testpass123")
+                cp_user.save()
+            UserProfile.objects.update_or_create(
+                user=cp_user,
+                defaults=dict(
+                    organisation=org,
+                    role=UserProfile.RoleChoices.COMPETENT_PERSON,
+                    clearance_level=UserProfile.ClearanceLevel.JORC_APPROVED,
+                    can_approve_jorc=True,
+                    can_approve_valmin=False,
+                    employee_id=f"CP-{fake.unique.random_int(min=1000, max=9999)}",
+                ),
+            )
+            users.append(cp_user)
+            self._log(f"created: Competent Person for {org.name} — {cp_username} / testpass123")
+
         self._log(f"created: {len(users)} users + profiles")
         return users
 

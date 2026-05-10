@@ -151,15 +151,17 @@ Style:
 - Keep to ~400–700 words.
 """
 
-def generate_project_report(process_id: str, clearance_level: str = "INTERNAL") -> str:
+def generate_project_report(process_id: str, clearance_level: str = "INTERNAL") -> tuple[str, list[str]]:
     """
-    Orchestrates: fetch → structure → call Granite → return Markdown.
+    Orchestrates: fetch → structure → call Granite → return (Markdown, doc_ids).
 
     Only documents and chunks accessible at clearance_level are included,
     ensuring cached reports are correctly scoped per clearance tier.
+    Returns a tuple of (markdown_text, list_of_document_ids_used_as_context).
     """
     bundle = fetch_process_bundle(process_id, clearance_level=clearance_level)
     p = bundle["process"]
+    doc_ids = [str(d.id) for d in bundle["docs"]]
 
     # Structured metadata context
     metadata_ctx = build_structured_context(bundle)
@@ -177,7 +179,7 @@ def generate_project_report(process_id: str, clearance_level: str = "INTERNAL") 
 
     client = GraniteClient()
     text = client.complete(prompt)
-    return text
+    return text, doc_ids
 
 def save_report(process, organisation, title, content_md, user, reason="GENERATED", summary=""):
     import hashlib

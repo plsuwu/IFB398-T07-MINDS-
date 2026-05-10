@@ -34,7 +34,7 @@ import re, io
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.postgres.search import SearchQuery, SearchRank
 from .forms import DocumentForm, DocumentSearchForm, ProspectForm, TenementForm
-from .models import Document, Process, SavedReport, AuditLog, log_audit, Prospect, DocLink, UserProfile, Drillhole, DrillholeSurvey, LithologyInterval, AssayResult, Organisation, Tenement
+from .models import Document, Process, SavedReport, AuditLog, log_audit, Prospect, DocLink, UserProfile, Drillhole, DrillholeSurvey, LithologyInterval, AssayResult, Organisation, Tenement, ApprovalWorkflow
 from .importers import run_drillhole_import
 from .permissions import role_required, clearance_required, log_view_access
 from .utils import sha256_file, extract_text, chunk_text
@@ -180,12 +180,13 @@ def _report_cache_key(process_id: str, clearance_level: str, latest_doc_ts) -> s
     return f"report:v1:{process_id}:{clearance_level}:{doc_fingerprint}"
 
 
-def _get_cached_report_md(process_id: str, clearance_level: str) -> str:
+def _get_cached_report_bundle(process_id: str, clearance_level: str) -> dict:
     """
-    return the cached report markdown for this project + clearance combination, generating and caching if not already existing
+    Return cached {"md": str, "doc_ids": [str, ...]} for this process + clearance,
+    generating and caching if not already present.
 
-    cache key includes a content fingerprint (latest document upload timestamp)
-    so the cache self-invalidates whenever a new document is added to the project
+    Cache key includes latest-document timestamp so the cache auto-invalidates
+    whenever a new document is added to the project.
     """
     latest_doc_ts = (
         Document.objects
@@ -196,11 +197,17 @@ def _get_cached_report_md(process_id: str, clearance_level: str) -> str:
     )
     cache_key = _report_cache_key(process_id, clearance_level, latest_doc_ts)
 
-    md = cache.get(cache_key)
-    if md is None:
-        md = generate_project_report(process_id, clearance_level=clearance_level)
-        cache.set(cache_key, md, 86400)  # 24 hours
-    return md
+    cached = cache.get(cache_key)
+    # Regenerate for any non-dict cached value (None, legacy str, or tuple from old code)
+    if not isinstance(cached, dict):
+        md, doc_ids = generate_project_report(process_id, clearance_level=clearance_level)
+        cached = {"md": md, "doc_ids": doc_ids}
+        cache.set(cache_key, cached, 86400)  # 24 hours
+    return cached
+
+
+def _get_cached_report_md(process_id: str, clearance_level: str) -> str:
+    return _get_cached_report_bundle(process_id, clearance_level)["md"]
 
 @login_required
 @role_required(
@@ -266,7 +273,9 @@ def upload_doc(request):
             })
 
             doc.save()
-            # form.save_m2m()
+            log_audit(request.user, AuditLog.ActionType.CREATE, doc,
+                      f"Uploaded document '{doc.title}'",
+                      ip_address=request.META.get("REMOTE_ADDR"))
             # Build text chunks for RAG retrieval
             if doc.extracted_text:
                 from .models import DocumentChunk
@@ -293,10 +302,10 @@ def upload_doc(request):
                     str(doc.process_id), uploader_clearance, doc.created_at
                 )
                 try:
-                    warmed = generate_project_report(
+                    warm_md, warm_doc_ids = generate_project_report(
                         str(doc.process_id), clearance_level=uploader_clearance
                     )
-                    cache.set(warm_cache_key, warmed, 86400)
+                    cache.set(warm_cache_key, {"md": warm_md, "doc_ids": warm_doc_ids}, 86400)
                 except Exception:
                     # Granite unavailable — report will be generated on first view request
                     pass
@@ -510,7 +519,9 @@ def delete_document(request, pk):
     doc_title = doc.title
 
     try:
-        # The delete() method on the model will handle file deletion from MinIO
+        log_audit(request.user, AuditLog.ActionType.DELETE, doc,
+                  f"Deleted document '{doc_title}'",
+                  ip_address=request.META.get("REMOTE_ADDR"))
         doc.delete()
 
         # Invalidate the document list cache so the deletion is reflected immediately
@@ -728,6 +739,9 @@ def create_prospect(request):
             lng = form.cleaned_data["longitude"]
             prospect.geom = Point(float(lng), float(lat), srid=4326)
             prospect.save()
+            log_audit(request.user, AuditLog.ActionType.CREATE, prospect,
+                      f"Created prospect '{prospect.name}'",
+                      ip_address=request.META.get("REMOTE_ADDR"))
             return redirect("prospect_detail", pk=prospect.pk)
         if request.headers.get("HX-Request"):
             return render(request, "core/partials/prospect_form_partial.html", {"form": form})
@@ -772,6 +786,9 @@ def edit_prospect(request, pk):
             lng = form.cleaned_data["longitude"]
             updated.geom = Point(float(lng), float(lat), srid=4326)
             updated.save()
+            log_audit(request.user, AuditLog.ActionType.EDIT, updated,
+                      f"Edited prospect '{updated.name}'",
+                      ip_address=request.META.get("REMOTE_ADDR"))
             return redirect("prospect_detail", pk=prospect.pk)
         err_lat = prospect.geom.y if prospect.geom else -25.0
         err_lng = prospect.geom.x if prospect.geom else 133.0
@@ -816,7 +833,7 @@ def generate_prospect_report(request, pk):
     report_title = request.POST.get("report_title", "").strip() or f"{prospect.name} — Prospect Report"
 
     try:
-        md = generate_project_report(str(prospect.process_id), clearance_level=clearance_level)
+        md, doc_ids = generate_project_report(str(prospect.process_id), clearance_level=clearance_level)
     except Exception as e:
         log.error("Prospect report generation failed: %s", e)
         messages.error(request, f"Report generation failed: {e}")
@@ -845,6 +862,9 @@ def generate_prospect_report(request, pk):
             version_number=1,
             change_reason=SavedReport.ChangeReason.GENERATED,
         )
+
+    if doc_ids:
+        report.source_documents.set(Document.objects.filter(pk__in=doc_ids))
 
     return redirect("saved_report_editor", report_id=report.pk)
 
@@ -900,12 +920,16 @@ def create_doc_link(request):
     created_by = request.user if request.user.is_authenticated else None
     for document_id in document_ids:
         document = get_object_or_404(Document, pk=document_id)
-        DocLink.objects.get_or_create(
+        link, created = DocLink.objects.get_or_create(
             document=document,
             content_type=ct,
             object_id=object_id,
             defaults={"created_by": created_by},
         )
+        if created:
+            log_audit(request.user, AuditLog.ActionType.EDIT, document,
+                      f"Linked document '{document.title}' to {content_type_label} {object_id}",
+                      ip_address=request.META.get("REMOTE_ADDR"))
 
     if content_type_label == "prospect":
         prospect = get_object_or_404(Prospect, pk=object_id)
@@ -931,6 +955,9 @@ def delete_doc_link(request, pk):
     object_id = link.object_id
     content_type_label = ct.model
 
+    log_audit(request.user, AuditLog.ActionType.DELETE, link.document,
+              f"Unlinked document '{link.document.title}' from {content_type_label} {object_id}",
+              ip_address=request.META.get("REMOTE_ADDR"))
     link.delete()
 
     if content_type_label == "prospect":
@@ -1121,6 +1148,12 @@ def drillhole_import(request):
                 result  = run_drillhole_import(
                     file, org=org, process=process, dry_run=dry_run, update=update
                 )
+                if not dry_run:
+                    c = result.get("counters", {})
+                    log_audit(request.user, AuditLog.ActionType.CREATE, process,
+                              f"Imported drillholes: {c.get('created', 0)} created, "
+                              f"{c.get('updated', 0)} updated, {c.get('skipped', 0)} skipped",
+                              ip_address=request.META.get("REMOTE_ADDR"))
                 context.update({
                     "result":       result,
                     "counters":     result["counters"],
@@ -1691,7 +1724,9 @@ def generate_report(request):
     clearance_level = _get_clearance_level(request)
     try:
         process = get_object_or_404(Process, org_filter, pk=process_id)
-        md = _get_cached_report_md(process_id, clearance_level)
+        bundle = _get_cached_report_bundle(process_id, clearance_level)
+        md = bundle["md"]
+        doc_ids = bundle.get("doc_ids", [])
     except Exception as e:
         log.error("Report generation failed during generate_report: %s", e)
         messages.error(request, f"Report generation failed: {e}")
@@ -1704,14 +1739,14 @@ def generate_report(request):
     ).order_by("-version_number").first()
 
     if existing:
-        SavedReport.create_version(
+        report = SavedReport.create_version(
             parent=existing,
             content_md=md,
             user=request.user,
             reason=SavedReport.ChangeReason.REGENERATED,
         )
     else:
-        SavedReport.objects.create(
+        report = SavedReport.objects.create(
             process=process,
             organisation=process.organisation,
             title=title,
@@ -1721,6 +1756,9 @@ def generate_report(request):
             version_number=1,
             change_reason=SavedReport.ChangeReason.GENERATED,
         )
+
+    if doc_ids:
+        report.source_documents.set(Document.objects.filter(pk__in=doc_ids))
 
     return redirect(reverse("report_editor", kwargs={"process_id": process_id}))
 
@@ -1828,6 +1866,9 @@ def save_report(request):
             user=created_by,
             reason=SavedReport.ChangeReason.MANUAL_EDIT,
         )
+        # Inherit source_documents from parent when no new ones available
+        if not report.source_documents.exists() and existing.source_documents.exists():
+            report.source_documents.set(existing.source_documents.all())
     else:
         import hashlib
         report = SavedReport.objects.create(
@@ -1841,6 +1882,20 @@ def save_report(request):
             version_number=1,
             change_reason=SavedReport.ChangeReason.GENERATED,
         )
+
+    # Populate source_documents from cached generation context if not already set
+    if process_id and not report.source_documents.exists():
+        try:
+            cached = _get_cached_report_bundle(process_id, clearance_level)
+            doc_ids = cached.get("doc_ids", [])
+            if doc_ids:
+                report.source_documents.set(Document.objects.filter(pk__in=doc_ids))
+        except Exception:
+            pass
+
+    log_audit(request.user, AuditLog.ActionType.CREATE, report,
+              f"Saved report '{title}' v{report.version_number}",
+              ip_address=request.META.get("REMOTE_ADDR"))
     return JsonResponse({
         "success": True,
         "report_id": str(report.id),
@@ -1882,6 +1937,12 @@ def update_saved_report(request, report_id):
         user=request.user,
         reason=SavedReport.ChangeReason.MANUAL_EDIT,
     )
+    # Propagate source_documents to new version (new_version may equal report if content unchanged)
+    if new_version.pk != report.pk and report.source_documents.exists():
+        new_version.source_documents.set(report.source_documents.all())
+    log_audit(request.user, AuditLog.ActionType.EDIT, new_version,
+              f"Updated report '{new_version.title}' to v{new_version.version_number}",
+              ip_address=request.META.get("REMOTE_ADDR"))
     return JsonResponse({
         "success": True,
         "new_version_id": str(new_version.id),
@@ -1898,28 +1959,66 @@ def submit_report_for_review(request, report_id):
     if report.status != SavedReport.Status.DRAFT:
         messages.error(request, "Only draft reports can be submitted for review.")
         return redirect("saved_report_editor", report_id=report_id)
+
+    workflow_type_raw = request.POST.get("workflow_type", "JORC").upper()
+    valid_types = {t.value for t in ApprovalWorkflow.WorkflowType}
+    workflow_type = workflow_type_raw if workflow_type_raw in valid_types else ApprovalWorkflow.WorkflowType.JORC
+    submission_notes = request.POST.get("submission_notes", "").strip()
+
+    workflow = ApprovalWorkflow.objects.create(
+        content_type=ContentType.objects.get_for_model(SavedReport),
+        object_id=report.pk,
+        workflow_type=workflow_type,
+        status=ApprovalWorkflow.Status.PENDING,
+        submitted_by=request.user,
+        submission_notes=submission_notes,
+    )
     report.status = SavedReport.Status.UNDER_REVIEW
-    report.save(update_fields=["status"])
+    report.approval_workflow = workflow
+    report.save(update_fields=["status", "approval_workflow"])
     log_audit(request.user, AuditLog.ActionType.EDIT, report,
-              "Submitted for review", ip_address=request.META.get("REMOTE_ADDR"))
-    messages.success(request, "Report submitted for review.")
+              f"Submitted for {workflow_type} review", ip_address=request.META.get("REMOTE_ADDR"))
+    messages.success(request, f"Report submitted for {workflow.get_workflow_type_display()} review.")
     return redirect("saved_report_editor", report_id=report_id)
 
 
 @login_required
 @require_POST
 def approve_report(request, report_id):
+    from django.utils import timezone
     report = get_object_or_404(SavedReport, pk=report_id)
     profile = getattr(request.user, "profile", None)
-    if not (profile and profile.can_approve_jorc):
+
+    # Check permission based on the workflow type linked to this report
+    workflow = getattr(report, "approval_workflow", None)
+    wf_type = workflow.workflow_type if workflow else ApprovalWorkflow.WorkflowType.JORC
+    if wf_type == ApprovalWorkflow.WorkflowType.VALMIN:
+        can_approve = profile and profile.can_approve_valmin
+    else:
+        can_approve = profile and (
+            profile.can_approve_jorc
+            or profile.role == UserProfile.RoleChoices.COMPETENT_PERSON
+        )
+    if not can_approve:
         raise PermissionDenied
+
     if report.status != SavedReport.Status.UNDER_REVIEW:
         messages.error(request, "Only reports under review can be approved.")
         return redirect("saved_report_editor", report_id=report_id)
+
+    approval_notes = request.POST.get("approval_notes", "").strip()
     report.status = SavedReport.Status.APPROVED
     report.save(update_fields=["status"])
+
+    if workflow:
+        workflow.status = ApprovalWorkflow.Status.APPROVED
+        workflow.approved_by = request.user
+        workflow.approval_notes = approval_notes
+        workflow.reviewed_at = timezone.now()
+        workflow.save(update_fields=["status", "approved_by", "approval_notes", "reviewed_at"])
+
     log_audit(request.user, AuditLog.ActionType.APPROVE, report,
-              "Approved", ip_address=request.META.get("REMOTE_ADDR"))
+              f"Approved ({wf_type})", ip_address=request.META.get("REMOTE_ADDR"))
     messages.success(request, "Report approved.")
     return redirect("saved_report_editor", report_id=report_id)
 
@@ -1927,17 +2026,40 @@ def approve_report(request, report_id):
 @login_required
 @require_POST
 def reject_report(request, report_id):
+    from django.utils import timezone
     report = get_object_or_404(SavedReport, pk=report_id)
     profile = getattr(request.user, "profile", None)
-    if not (profile and profile.can_approve_jorc):
+
+    workflow = getattr(report, "approval_workflow", None)
+    wf_type = workflow.workflow_type if workflow else ApprovalWorkflow.WorkflowType.JORC
+    if wf_type == ApprovalWorkflow.WorkflowType.VALMIN:
+        can_approve = profile and profile.can_approve_valmin
+    else:
+        can_approve = profile and (
+            profile.can_approve_jorc
+            or profile.role == UserProfile.RoleChoices.COMPETENT_PERSON
+        )
+    if not can_approve:
         raise PermissionDenied
+
     if report.status != SavedReport.Status.UNDER_REVIEW:
         messages.error(request, "Only reports under review can be rejected.")
         return redirect("saved_report_editor", report_id=report_id)
+
+    approval_notes = request.POST.get("approval_notes", "").strip()
     report.status = SavedReport.Status.DRAFT
-    report.save(update_fields=["status"])
+    report.approval_workflow = None
+    report.save(update_fields=["status", "approval_workflow"])
+
+    if workflow:
+        workflow.status = ApprovalWorkflow.Status.REJECTED
+        workflow.approved_by = request.user
+        workflow.approval_notes = approval_notes
+        workflow.reviewed_at = timezone.now()
+        workflow.save(update_fields=["status", "approved_by", "approval_notes", "reviewed_at"])
+
     log_audit(request.user, AuditLog.ActionType.REJECT, report,
-              "Rejected — returned to draft", ip_address=request.META.get("REMOTE_ADDR"))
+              f"Rejected ({wf_type}) — returned to draft", ip_address=request.META.get("REMOTE_ADDR"))
     messages.success(request, "Report returned to draft.")
     return redirect("saved_report_editor", report_id=report_id)
 
@@ -1947,9 +2069,10 @@ def reject_report(request, report_id):
 def publish_report(request, report_id):
     report = get_object_or_404(SavedReport, pk=report_id)
     profile = getattr(request.user, "profile", None)
-    if not (profile and (profile.can_approve_jorc or (
-        hasattr(profile, 'role') and profile.role == UserProfile.RoleChoices.ADMIN
-    ))):
+    if not (profile and (
+        profile.can_approve_jorc
+        or profile.role in (UserProfile.RoleChoices.ADMIN, UserProfile.RoleChoices.COMPETENT_PERSON)
+    )):
         raise PermissionDenied
     if report.status != SavedReport.Status.APPROVED:
         messages.error(request, "Only approved reports can be published.")
@@ -2032,18 +2155,29 @@ def all_reports_history(request):
 @require_POST
 def export_report(request):
     """
-    Export the  current markdown content as PDF or DOCX.
+    Export the current markdown content as PDF or DOCX.
     POST params:
-        format — "pdf" or "docx"
+        format     — "pdf" or "docx"
         content_md — the markdown string to render
-        title — used as the filename 
+        title      — used as the filename
+        report_id  — (optional) UUID of a SavedReport; if provided, a Sources section is appended
     """
     fmt       = request.POST.get("format", "pdf").lower()
     md_text   = request.POST.get("content_md", "")
     title     = request.POST.get("title", "report")
+    report_id = request.POST.get("report_id", "").strip()
     slug      = re.sub(r"[^\w-]", "_", title)
 
-    if fmt == "pdf":
+    # Build sources list if a saved report ID was provided
+    source_docs = []
+    if report_id:
+        try:
+            saved = SavedReport.objects.prefetch_related("source_documents").get(pk=report_id)
+            source_docs = list(saved.source_documents.order_by("title"))
+        except (SavedReport.DoesNotExist, Exception):
+            pass
+
+    def _render_pdf(md_text, source_docs):
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4,
                                 leftMargin=2*cm, rightMargin=2*cm,
@@ -2072,13 +2206,24 @@ def export_report(request):
             else:
                 story.append(Paragraph(line, body))
 
+        if source_docs:
+            story.append(Spacer(1, 20))
+            story.append(Paragraph("Sources", h2))
+            story.append(Paragraph(
+                "The following documents were used as context for this report:", body
+            ))
+            for i, d in enumerate(source_docs, 1):
+                doc_date = d.timestamp.strftime("%Y-%m-%d") if d.timestamp else ""
+                story.append(Paragraph(
+                    f"{i}. {d.title} — {d.doc_type or 'Document'} — {doc_date} — {d.confidentiality or ''}",
+                    bullet
+                ))
+
         doc.build(story)
         buf.seek(0)
-        response = HttpResponse(buf.getvalue(), content_type="application/pdf")
-        response["Content-Disposition"] = f'attachment; filename="{slug}_report.pdf"'
-        return response
+        return buf.getvalue()
 
-    if fmt == "docx":
+    def _render_docx(md_text, source_docs):
         doc = DocxDocument()
         style = doc.styles["Normal"]
         style.font.name = "Calibri"
@@ -2100,11 +2245,32 @@ def export_report(request):
             else:
                 doc.add_paragraph(line)
 
+        if source_docs:
+            doc.add_page_break()
+            doc.add_heading("Sources", level=2)
+            doc.add_paragraph("The following documents were used as context for this report:")
+            for i, d in enumerate(source_docs, 1):
+                doc_date = d.timestamp.strftime("%Y-%m-%d") if d.timestamp else ""
+                doc.add_paragraph(
+                    f"{i}. {d.title} — {d.doc_type or 'Document'} — {doc_date} — {d.confidentiality or ''}",
+                    style="List Number"
+                )
+
         buf = io.BytesIO()
         doc.save(buf)
         buf.seek(0)
+        return buf.getvalue()
+
+    if fmt == "pdf":
+        content = _render_pdf(md_text, source_docs)
+        response = HttpResponse(content, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{slug}_report.pdf"'
+        return response
+
+    if fmt == "docx":
+        content = _render_docx(md_text, source_docs)
         response = HttpResponse(
-            buf.getvalue(),
+            content,
             content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
         response["Content-Disposition"] = f'attachment; filename="{slug}_report.docx"'
@@ -2117,6 +2283,113 @@ def export_report(request):
 def report_detail(request, report_id):
     return render(request, "core/report_detail.html", {
         "report_id": report_id,
+    })
+
+
+@login_required
+@role_required(
+    UserProfile.RoleChoices.ADMIN,
+    UserProfile.RoleChoices.DATA_MANAGER,
+    UserProfile.RoleChoices.OPERATIONS_MANAGER,
+)
+def audit_log_view(request):
+    """Filterable audit trail for ADMIN/DATA_MANAGER/OPS_MANAGER users."""
+    import csv
+    from django.http import StreamingHttpResponse
+
+    qs = AuditLog.objects.select_related("user", "content_type").order_by("-timestamp")
+    org_filter = _org_qs_filter(request)
+
+    action    = request.GET.get("action", "").strip()
+    username  = request.GET.get("username", "").strip()
+    date_from = request.GET.get("date_from", "").strip()
+    date_to   = request.GET.get("date_to", "").strip()
+    obj_type  = request.GET.get("obj_type", "").strip()
+
+    if action:
+        qs = qs.filter(action=action)
+    if username:
+        qs = qs.filter(user__username__icontains=username)
+    if date_from:
+        qs = qs.filter(timestamp__date__gte=date_from)
+    if date_to:
+        qs = qs.filter(timestamp__date__lte=date_to)
+    if obj_type:
+        qs = qs.filter(content_type__model=obj_type.lower())
+
+    if request.GET.get("export") == "csv":
+        def _rows():
+            yield ["Timestamp", "User", "Action", "Object Type", "Object ID", "Description", "IP Address"]
+            for entry in qs.iterator(chunk_size=500):
+                yield [
+                    entry.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                    entry.user.username if entry.user else "",
+                    entry.action,
+                    entry.content_type.model if entry.content_type else "",
+                    str(entry.object_id),
+                    entry.description,
+                    entry.ip_address or "",
+                ]
+
+        class _EchoWriter:
+            def write(self, value):
+                return value
+
+        writer = csv.writer(_EchoWriter())
+        response = StreamingHttpResponse(
+            (writer.writerow(row) for row in _rows()),
+            content_type="text/csv",
+        )
+        response["Content-Disposition"] = 'attachment; filename="audit_log.csv"'
+        return response
+
+    page_obj = _paginate(qs, request, per_page=50)
+    return render(request, "core/audit_log.html", {
+        "page_obj": page_obj,
+        "action_choices": AuditLog.ActionType.choices,
+        "current_action": action,
+        "current_username": username,
+        "current_date_from": date_from,
+        "current_date_to": date_to,
+        "current_obj_type": obj_type,
+    })
+
+
+@login_required
+@role_required(
+    UserProfile.RoleChoices.ADMIN,
+    UserProfile.RoleChoices.DATA_MANAGER,
+    UserProfile.RoleChoices.OPERATIONS_MANAGER,
+)
+def approval_workflows_list(request):
+    """List all ApprovalWorkflow records for ADMIN/approval-capable users."""
+    org_filter = _org_qs_filter(request)
+
+    # Get workflow IDs associated with SavedReports in this org
+    report_ct = ContentType.objects.get_for_model(SavedReport)
+    report_ids = SavedReport.objects.filter(org_filter).values_list("id", flat=True)
+
+    qs = (
+        ApprovalWorkflow.objects
+        .filter(content_type=report_ct, object_id__in=report_ids)
+        .select_related("submitted_by", "approved_by")
+        .order_by("-submitted_at")
+    )
+
+    status_filter = request.GET.get("status")
+    wf_type_filter = request.GET.get("workflow_type")
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    if wf_type_filter:
+        qs = qs.filter(workflow_type=wf_type_filter)
+
+    page_obj = _paginate(qs, request, per_page=25)
+    return render(request, "core/approval_workflows_list.html", {
+        "page_obj": page_obj,
+        "status_choices": ApprovalWorkflow.Status.choices,
+        "workflow_type_choices": ApprovalWorkflow.WorkflowType.choices,
+        "current_status": status_filter or "",
+        "current_workflow_type": wf_type_filter or "",
     })
 
 

@@ -70,8 +70,14 @@ urlpatterns = [
     path("ai/reports/<uuid:report_id>/reject/",  views.reject_report,              name="reject_report"),
     path("ai/reports/<uuid:report_id>/publish/", views.publish_report,             name="publish_report"),
 
-    # Export from editor content via POST 
+    # Export from editor content via POST
     path("ai/reports/export/", views.export_report, name="export_report"),
+
+    # Approval workflows list
+    path("ai/approvals/", views.approval_workflows_list, name="approval_workflows_list"),
+
+    # Audit trail (admin/compliance)
+    path("admin/audit-log/", views.audit_log_view, name="audit_log"),
     path("ai/documents/analysis/", views.document_analysis_page, name="document_analysis_page"),
     path("ai/documents/<uuid:pk>/analyze/", views.analyze_document, name="analyze_document"),
     path("ai/documents/<uuid:pk>/analysis/", views.document_analysis_detail, name="document_analysis_detail"),
