@@ -5,7 +5,8 @@ from django.contrib.gis.admin import GISModelAdmin
 from .models import (
     Process, Document, Organisation, Prospect, Tenement, Drillhole,
     DrillholeSurvey, LithologyInterval, AssayResult,
-    UserProfile, AuditLog, ApprovalWorkflow, DocumentView, SavedReport, DocLink
+    UserProfile, AuditLog, ApprovalWorkflow, DocumentView, SavedReport, DocLink,
+    Sample, Survey,
 )
 
 # CORE MODELS ---------------------------------
@@ -43,7 +44,7 @@ class ProspectAdmin(GISModelAdmin):
             "fields": ("hypothesis", "objective"),
         }),
         ("Geometry", {
-            "fields": ("geom",),
+            "fields": ("geom", "area_geom"),
         }),
         ("Timestamps", {
             "fields": ("created_at", "updated_at"),
@@ -193,6 +194,57 @@ class DocumentViewAdmin(djadmin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False  # View records should be immutable
+
+
+@djadmin.register(Sample)
+class SampleAdmin(GISModelAdmin):
+    list_display  = ("name", "sample_type", "process", "prospect", "collected_at", "created_at")
+    list_filter   = ("sample_type", "organisation")
+    search_fields = ("name", "sample_number", "collected_by", "laboratory")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+    fieldsets = (
+        ("Identity", {
+            "fields": ("name", "organisation", "process", "prospect"),
+        }),
+        ("Sample Details", {
+            "fields": ("sample_type", "sample_number", "depth", "description"),
+        }),
+        ("Collection", {
+            "fields": ("collected_by", "collected_at", "laboratory"),
+        }),
+        ("Location", {
+            "fields": ("location",),
+        }),
+        ("Timestamps", {
+            "fields": ("id", "created_at", "updated_at"),
+            "classes": ("collapse",),
+        }),
+    )
+
+
+@djadmin.register(Survey)
+class SurveyAdmin(GISModelAdmin):
+    list_display  = ("name", "survey_type", "process", "prospect", "contractor", "created_at")
+    list_filter   = ("survey_type", "organisation")
+    search_fields = ("name", "contractor", "description")
+    readonly_fields = ("id", "created_at")
+
+    fieldsets = (
+        ("Identity", {
+            "fields": ("name", "organisation", "process", "prospect"),
+        }),
+        ("Survey Details", {
+            "fields": ("survey_type", "contractor", "date_from", "date_to", "description"),
+        }),
+        ("Coverage Area", {
+            "fields": ("geom",),
+        }),
+        ("Timestamps", {
+            "fields": ("id", "created_at"),
+            "classes": ("collapse",),
+        }),
+    )
 
 
 @djadmin.register(DocLink)

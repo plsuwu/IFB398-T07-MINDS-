@@ -44,10 +44,8 @@
             <!-- Submit for Review (DRAFT only) — expands to show options -->
             {% if saved_report.status == 'DRAFT' %}
             <details class="relative">
-              <summary class="cursor-pointer list-none">
-                <button type="button" class="px-4 py-2 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600">
-                  Submit for Review
-                </button>
+              <summary class="cursor-pointer list-none inline-flex items-center px-4 py-2 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600">
+                Submit for Review
               </summary>
               <div class="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-72">
                 <form method="post" action="{% url 'submit_report_for_review' saved_report.pk %}">
@@ -75,8 +73,8 @@
             <!-- JORC Approve / Return to Draft -->
             {% if saved_report.status == 'UNDER_REVIEW' and request.user.profile.can_approve_jorc and saved_report.approval_workflow.workflow_type != 'VALMIN' %}
             <details class="relative">
-              <summary class="cursor-pointer list-none">
-                <button type="button" class="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700">Approve (JORC)</button>
+              <summary class="cursor-pointer list-none inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700">
+                Approve (JORC)
               </summary>
               <div class="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64">
                 <form method="post" action="{% url 'approve_report' saved_report.pk %}">
@@ -90,8 +88,8 @@
               </div>
             </details>
             <details class="relative">
-              <summary class="cursor-pointer list-none">
-                <button type="button" class="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">Return to Draft</button>
+              <summary class="cursor-pointer list-none inline-flex items-center px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">
+                Return to Draft
               </summary>
               <div class="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64">
                 <form method="post" action="{% url 'reject_report' saved_report.pk %}">
@@ -109,8 +107,8 @@
             <!-- VALMIN Approve / Return to Draft -->
             {% if saved_report.status == 'UNDER_REVIEW' and request.user.profile.can_approve_valmin and saved_report.approval_workflow.workflow_type == 'VALMIN' %}
             <details class="relative">
-              <summary class="cursor-pointer list-none">
-                <button type="button" class="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700">Approve (VALMIN)</button>
+              <summary class="cursor-pointer list-none inline-flex items-center px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700">
+                Approve (VALMIN)
               </summary>
               <div class="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64">
                 <form method="post" action="{% url 'approve_report' saved_report.pk %}">
@@ -124,8 +122,8 @@
               </div>
             </details>
             <details class="relative">
-              <summary class="cursor-pointer list-none">
-                <button type="button" class="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">Return to Draft</button>
+              <summary class="cursor-pointer list-none inline-flex items-center px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">
+                Return to Draft
               </summary>
               <div class="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64">
                 <form method="post" action="{% url 'reject_report' saved_report.pk %}">
@@ -244,6 +242,45 @@
       <div class="flex-1">
         <textarea id="md-editor">{{ markdown_content }}</textarea>
       </div>
+
+      <!-- Prospect Assignment panel (saved reports only) -->
+      {% if saved_report and process_prospects %}
+      <div class="mt-4">
+        <details class="bg-white rounded-xl shadow">
+          <summary class="px-4 py-3 cursor-pointer flex items-center justify-between text-sm font-semibold text-gray-700 select-none">
+            <span>
+              Linked Prospect
+              {% if saved_report.prospect %}
+                <span class="ml-2 text-xs font-normal text-cyan-600">{{ saved_report.prospect.name }}</span>
+              {% else %}
+                <span class="ml-2 text-xs font-normal text-gray-400">None</span>
+              {% endif %}
+            </span>
+            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </summary>
+          <div class="border-t border-gray-100 px-4 py-3">
+            <p class="text-xs text-gray-500 mb-3">
+              Link this report to a specific prospect within the project. This enables the report to appear on the prospect detail page.
+            </p>
+            <div class="flex items-center gap-2">
+              <select id="prospect-selector" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400">
+                <option value="">— No prospect —</option>
+                {% for p in process_prospects %}
+                  <option value="{{ p.pk }}" {% if saved_report.prospect_id == p.pk %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+              </select>
+              <button type="button" onclick="assignProspect()"
+                      class="px-3 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+                Save
+              </button>
+            </div>
+            <p id="prospect-save-status" class="text-xs mt-2 text-gray-400 hidden"></p>
+          </div>
+        </details>
+      </div>
+      {% endif %}
 
       <!-- Source Documents panel (saved reports only) -->
       {% if saved_report and saved_report.source_documents.exists %}
@@ -377,6 +414,13 @@
     }
   });
 
+  // Workflow form submissions navigate back to the same editor — don't block with beforeunload
+  document.addEventListener("submit", function (e) {
+    if (e.target.id !== "form-export") {
+      isDirty = false;
+    }
+  });
+
   // Intercept ordinary anchor clicks for non-HTMX links
   document.addEventListener("click", function (e) {
     const anchor = e.target.closest("a[href]");
@@ -476,6 +520,34 @@
     el.classList.remove("hidden");
     setTimeout(() => el.classList.add("hidden"), 4000);
   }
+
+  // ── Prospect assignment ───────────────────────────────────────────────────
+  {% if saved_report %}
+  async function assignProspect() {
+    const sel    = document.getElementById("prospect-selector");
+    const status = document.getElementById("prospect-save-status");
+    if (!sel) return;
+    const body = new URLSearchParams({ prospect_id: sel.value });
+    try {
+      const resp = await fetch("{% url 'assign_report_prospect' saved_report.pk %}", {
+        method: "POST",
+        headers: { "X-CSRFToken": CSRF_TOKEN, "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      });
+      const data = await resp.json();
+      if (data.success) {
+        status.textContent = "Prospect saved.";
+        status.className = "text-xs mt-2 text-green-600";
+        status.classList.remove("hidden");
+        setTimeout(() => status.classList.add("hidden"), 3000);
+      }
+    } catch (e) {
+      status.textContent = "Failed to save prospect.";
+      status.className = "text-xs mt-2 text-red-600";
+      status.classList.remove("hidden");
+    }
+  }
+  {% endif %}
 </script>
 
 {% endblock %}

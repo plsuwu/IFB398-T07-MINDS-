@@ -130,6 +130,10 @@ class Prospect(models.Model):
 
     # Geospatial field — prospect location (point) or area (polygon)
     geom = models.PointField(srid=4326, null=True, blank=True)
+    area_geom = models.PolygonField(
+        srid=4326, null=True, blank=True,
+        help_text="Optional area boundary for the prospect"
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -660,6 +664,7 @@ class SavedReport(models.Model):
     )
     title = models.CharField(max_length=256)
     content_md = models.TextField()
+    search_tsv = SearchVectorField(null=True, blank=True)  # populated by DB trigger
     clearance_level = models.CharField(
         max_length=32,
         choices=UserProfile.ClearanceLevel.choices,
@@ -907,6 +912,74 @@ class DocLink(models.Model):
 
     def __str__(self):
         return f"{self.document.title} → {self.content_object}"
+
+
+# SAMPLES & SURVEYS ---------------------------------
+
+class Sample(models.Model):
+    class SampleType(models.TextChoices):
+        ROCK_CHIP  = "ROCK_CHIP",  _("Rock Chip")
+        SOIL       = "SOIL",       _("Soil")
+        STREAM_SED = "STREAM_SED", _("Stream Sediment")
+        TRENCH     = "TRENCH",     _("Trench")
+        CORE       = "CORE",       _("Drill Core")
+        CHANNEL    = "CHANNEL",    _("Channel")
+
+    id           = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    name         = models.CharField(max_length=64)
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE)
+    process      = models.ForeignKey(Process, on_delete=models.CASCADE)
+    prospect     = models.ForeignKey(
+        Prospect, null=True, blank=True, on_delete=models.SET_NULL, related_name="samples"
+    )
+    sample_type   = models.CharField(max_length=16, choices=SampleType.choices, blank=True)
+    sample_number = models.CharField(max_length=64, blank=True)
+    location      = models.PointField(srid=4326, null=True, blank=True)
+    depth         = models.FloatField(null=True, blank=True)
+    description   = models.TextField(blank=True)
+    collected_by  = models.CharField(max_length=128, blank=True)
+    collected_at  = models.DateField(null=True, blank=True)
+    laboratory    = models.CharField(max_length=128, blank=True)
+    created_at    = models.DateTimeField(auto_now_add=True)
+    updated_at    = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_sample_type_display()})" if self.sample_type else self.name
+
+
+class Survey(models.Model):
+    class SurveyType(models.TextChoices):
+        GEOPHYSICS     = "GEOPHYSICS", _("Geophysics")
+        SOIL_GRID      = "SOIL_GRID",  _("Soil Grid")
+        MAPPING        = "MAPPING",    _("Geological Mapping")
+        REMOTE_SENSING = "REMOTE",     _("Remote Sensing")
+
+    id           = models.UUIDField(primary_key=True, default=uuid.uuid4)
+    name         = models.CharField(max_length=128)
+    organisation = models.ForeignKey(Organisation, on_delete=models.CASCADE)
+    process      = models.ForeignKey(Process, on_delete=models.CASCADE)
+    prospect     = models.ForeignKey(
+        Prospect, null=True, blank=True, on_delete=models.SET_NULL, related_name="surveys"
+    )
+    survey_type  = models.CharField(max_length=16, choices=SurveyType.choices, blank=True)
+    contractor   = models.CharField(max_length=128, blank=True)
+    date_from    = models.DateField(null=True, blank=True)
+    date_to      = models.DateField(null=True, blank=True)
+    description  = models.TextField(blank=True)
+    geom         = models.PolygonField(
+        srid=4326, null=True, blank=True,
+        help_text="Coverage area of the survey"
+    )
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_survey_type_display()})" if self.survey_type else self.name
 
 
 # HELPER FUNCTIONS ---------------------------------

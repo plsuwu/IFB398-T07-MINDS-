@@ -115,6 +115,46 @@
         {% endfor %}
       </div>
 
+      <!-- Optional area boundary -->
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          Area Boundary
+          <span class="font-normal text-gray-500">— optional polygon showing the prospect extent</span>
+        </label>
+
+        <div class="flex gap-2 mb-2">
+          <button type="button" id="btn-area-start" onclick="startAreaDraw()"
+                  class="px-3 py-1.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700">
+            Draw Area
+          </button>
+          <button type="button" id="btn-area-finish" onclick="finishAreaDraw()"
+                  class="hidden px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700">
+            Finish Area
+          </button>
+          <button type="button" id="btn-area-cancel" onclick="cancelAreaDraw()"
+                  class="hidden px-3 py-1.5 text-sm font-medium text-white bg-yellow-500 rounded-lg hover:bg-yellow-600">
+            Cancel
+          </button>
+          <button type="button" id="btn-area-clear" onclick="clearAreaGeom()"
+                  class="hidden px-3 py-1.5 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600">
+            Clear Area
+          </button>
+        </div>
+
+        <p id="area-draw-hint" class="hidden text-xs text-emerald-700 mb-2">
+          Click on the map below to add vertices. Click <strong>Finish Area</strong> when done (min. 3 points).
+          Press <kbd class="bg-white border border-emerald-300 px-1 rounded text-xs">Esc</kbd> to cancel.
+        </p>
+
+        <div id="area-map" class="rounded-lg border border-gray-300" style="height: 300px;"></div>
+
+        <p id="area-status" class="text-sm text-gray-500 mt-2">
+          {% if editing and prospect.area_geom %}Area boundary mapped — redraw to update{% else %}No area boundary drawn{% endif %}
+        </p>
+
+        {{ form.area_geom_geojson }}
+      </div>
+
       <!-- Actions -->
       <div class="flex items-center gap-4">
         <button type="submit"
@@ -194,6 +234,133 @@ map.on('click', (e) => {
     document.getElementById('id_latitude').value  = lat;
     document.getElementById('id_longitude').value = lng;
     document.getElementById('location-display').textContent = lat + '°, ' + lng + '°';
+});
+
+// ── Area boundary map ────────────────────────────────────────────────────────
+const INITIAL_AREA_GEOJSON = {{ initial_area_geojson|default:"null"|safe }};
+
+const areaMap = new maplibregl.Map({
+    container: 'area-map',
+    style: {
+        version: 8,
+        sources: {
+            'satellite': { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: '© Esri' },
+            'labels':    { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 }
+        },
+        layers: [
+            { id: 'sat', type: 'raster', source: 'satellite', minzoom: 0, maxzoom: 22 },
+            { id: 'lbl', type: 'raster', source: 'labels',    minzoom: 0, maxzoom: 22 }
+        ]
+    },
+    center: [{{ initial_lng }}, {{ initial_lat }}],
+    zoom: {{ initial_zoom }}
+});
+areaMap.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+let isAreaDrawing = false;
+let areaPoints = [];
+
+areaMap.on('click', (e) => {
+    if (!isAreaDrawing) return;
+    areaPoints.push([e.lngLat.lng, e.lngLat.lat]);
+    updateAreaDrawLayer();
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isAreaDrawing) cancelAreaDraw();
+});
+
+function startAreaDraw() {
+    isAreaDrawing = true;
+    areaPoints = [];
+    areaMap.getCanvas().style.cursor = 'crosshair';
+    document.getElementById('btn-area-start').classList.add('hidden');
+    document.getElementById('btn-area-finish').classList.remove('hidden');
+    document.getElementById('btn-area-cancel').classList.remove('hidden');
+    document.getElementById('btn-area-clear').classList.add('hidden');
+    document.getElementById('area-draw-hint').classList.remove('hidden');
+}
+
+function finishAreaDraw() {
+    if (areaPoints.length < 3) { alert('Add at least 3 points before finishing.'); return; }
+    isAreaDrawing = false;
+    areaMap.getCanvas().style.cursor = '';
+    document.getElementById('btn-area-finish').classList.add('hidden');
+    document.getElementById('btn-area-cancel').classList.add('hidden');
+    document.getElementById('btn-area-start').classList.remove('hidden');
+    document.getElementById('btn-area-clear').classList.remove('hidden');
+    document.getElementById('area-draw-hint').classList.add('hidden');
+    const ring = [...areaPoints, areaPoints[0]];
+    const geojson = JSON.stringify({ type: 'Polygon', coordinates: [ring] });
+    document.getElementById('id_area_geom_geojson').value = geojson;
+    document.getElementById('area-status').textContent = 'Area drawn — submit to save.';
+    if (areaMap.getSource('area-draw-source')) {
+        areaMap.getSource('area-draw-source').setData({
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: {} }]
+        });
+    }
+    areaPoints = [];
+}
+
+function cancelAreaDraw() {
+    isAreaDrawing = false;
+    areaPoints = [];
+    areaMap.getCanvas().style.cursor = '';
+    document.getElementById('btn-area-start').classList.remove('hidden');
+    document.getElementById('btn-area-finish').classList.add('hidden');
+    document.getElementById('btn-area-cancel').classList.add('hidden');
+    document.getElementById('area-draw-hint').classList.add('hidden');
+    updateAreaDrawLayer();
+}
+
+function clearAreaGeom() {
+    areaPoints = [];
+    document.getElementById('id_area_geom_geojson').value = '';
+    document.getElementById('area-status').textContent = 'No area boundary drawn.';
+    document.getElementById('btn-area-clear').classList.add('hidden');
+    if (areaMap.getSource('area-geom-source')) {
+        areaMap.getSource('area-geom-source').setData({ type: 'FeatureCollection', features: [] });
+    }
+    if (areaMap.getSource('area-draw-source')) {
+        areaMap.getSource('area-draw-source').setData({ type: 'FeatureCollection', features: [] });
+    }
+}
+
+function updateAreaDrawLayer() {
+    if (!areaMap.getSource('area-draw-source')) return;
+    const features = [];
+    if (areaPoints.length > 0) {
+        areaPoints.forEach(pt => features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: pt }, properties: {} }));
+        if (areaPoints.length > 1) {
+            features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: areaPoints }, properties: {} });
+        }
+    }
+    areaMap.getSource('area-draw-source').setData({ type: 'FeatureCollection', features });
+}
+
+areaMap.on('load', () => {
+    areaMap.addSource('area-geom-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    areaMap.addLayer({ id: 'area-geom-fill',    type: 'fill',   source: 'area-geom-source', paint: { 'fill-color': '#10b981', 'fill-opacity': 0.2 } });
+    areaMap.addLayer({ id: 'area-geom-outline', type: 'line',   source: 'area-geom-source', paint: { 'line-color': '#10b981', 'line-width': 2 } });
+
+    areaMap.addSource('area-draw-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    areaMap.addLayer({ id: 'area-draw-fill',   type: 'fill',   source: 'area-draw-source', filter: ['==', '$type', 'Polygon'],    paint: { 'fill-color': '#10b981', 'fill-opacity': 0.1 } });
+    areaMap.addLayer({ id: 'area-draw-line',   type: 'line',   source: 'area-draw-source', filter: ['any', ['==', '$type', 'LineString'], ['==', '$type', 'Polygon']], paint: { 'line-color': '#10b981', 'line-width': 2, 'line-dasharray': [3, 1] } });
+    areaMap.addLayer({ id: 'area-draw-points', type: 'circle', source: 'area-draw-source', filter: ['==', '$type', 'Point'],      paint: { 'circle-radius': 5, 'circle-color': '#10b981', 'circle-stroke-width': 2, 'circle-stroke-color': '#ffffff' } });
+
+    if (INITIAL_AREA_GEOJSON) {
+        areaMap.getSource('area-geom-source').setData({
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', geometry: INITIAL_AREA_GEOJSON, properties: {} }]
+        });
+        document.getElementById('btn-area-clear').classList.remove('hidden');
+        // Fit bounds
+        const coords = INITIAL_AREA_GEOJSON.coordinates[0];
+        let minLng = coords[0][0], maxLng = coords[0][0], minLat = coords[0][1], maxLat = coords[0][1];
+        coords.forEach(c => { minLng = Math.min(minLng, c[0]); maxLng = Math.max(maxLng, c[0]); minLat = Math.min(minLat, c[1]); maxLat = Math.max(maxLat, c[1]); });
+        areaMap.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 40 });
+    }
 });
 </script>
 

@@ -33,8 +33,8 @@ import re, io
 
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.postgres.search import SearchQuery, SearchRank
-from .forms import DocumentForm, DocumentSearchForm, ProspectForm, TenementForm
-from .models import Document, Process, SavedReport, AuditLog, log_audit, Prospect, DocLink, UserProfile, Drillhole, DrillholeSurvey, LithologyInterval, AssayResult, Organisation, Tenement, ApprovalWorkflow
+from .forms import DocumentForm, DocumentSearchForm, ProspectForm, TenementForm, SampleForm, SurveyForm
+from .models import Document, Process, SavedReport, AuditLog, log_audit, Prospect, DocLink, UserProfile, Drillhole, DrillholeSurvey, LithologyInterval, AssayResult, Organisation, Tenement, ApprovalWorkflow, Sample, Survey
 from .importers import run_drillhole_import
 from .permissions import role_required, clearance_required, log_view_access
 from .utils import sha256_file, extract_text, chunk_text
@@ -660,6 +660,7 @@ def prospects(request):
 
 @login_required
 def prospect_detail(request, pk):
+    import json
     from django.core.serializers import serialize
 
     prospect = get_object_or_404(Prospect, pk=pk)
@@ -680,8 +681,9 @@ def prospect_detail(request, pk):
     drillholes = Drillhole.objects.filter(prospect=prospect).order_by("name")
     tenements = Tenement.objects.filter(process=prospect.process).order_by("name")
     prospect_reports = SavedReport.objects.filter(prospect=prospect).order_by("-created_at")
+    samples = Sample.objects.filter(prospect=prospect).order_by("-created_at")
+    surveys = Survey.objects.filter(prospect=prospect).order_by("-created_at")
 
-    # GeoJSON for the embedded map
     drillholes_geojson = serialize(
         'geojson',
         drillholes.exclude(collar_location__isnull=True),
@@ -694,6 +696,7 @@ def prospect_detail(request, pk):
         geometry_field='geom',
         fields=['name'],
     )
+    area_geom_geojson = json.dumps(json.loads(prospect.area_geom.geojson)) if prospect.area_geom else "null"
 
     return render(request, "core/prospect_detail.html", {
         "prospect":           prospect,
@@ -701,8 +704,11 @@ def prospect_detail(request, pk):
         "drillholes":         drillholes,
         "tenements":          tenements,
         "prospect_reports":   prospect_reports,
+        "samples":            samples,
+        "surveys":            surveys,
         "drillholes_geojson": drillholes_geojson,
         "tenements_geojson":  tenements_geojson,
+        "area_geom_geojson":  area_geom_geojson,
     })
 
 
@@ -750,6 +756,7 @@ def create_prospect(request):
             "initial_lat": -25.0,
             "initial_lng": 133.0,
             "initial_zoom": 4,
+            "initial_area_geojson": "null",
         })
 
     form = ProspectForm(organisation=org, initial_process=initial_process)
@@ -758,6 +765,7 @@ def create_prospect(request):
         "initial_lat": -25.0,
         "initial_lng": 133.0,
         "initial_zoom": 4,
+        "initial_area_geojson": "null",
     })
 
 
@@ -790,8 +798,10 @@ def edit_prospect(request, pk):
                       f"Edited prospect '{updated.name}'",
                       ip_address=request.META.get("REMOTE_ADDR"))
             return redirect("prospect_detail", pk=prospect.pk)
+        import json as _json
         err_lat = prospect.geom.y if prospect.geom else -25.0
         err_lng = prospect.geom.x if prospect.geom else 133.0
+        err_area = _json.dumps(_json.loads(prospect.area_geom.geojson)) if prospect.area_geom else "null"
         return render(request, "core/prospect_form.html", {
             "form": form,
             "editing": True,
@@ -799,10 +809,13 @@ def edit_prospect(request, pk):
             "initial_lat": err_lat,
             "initial_lng": err_lng,
             "initial_zoom": 10 if prospect.geom else 4,
+            "initial_area_geojson": err_area,
         })
 
+    import json as _json
     initial_lat = prospect.geom.y if prospect.geom else -25.0
     initial_lng = prospect.geom.x if prospect.geom else 133.0
+    initial_area = _json.dumps(_json.loads(prospect.area_geom.geojson)) if prospect.area_geom else "null"
     form = ProspectForm(instance=prospect, organisation=org)
     return render(request, "core/prospect_form.html", {
         "form": form,
@@ -811,6 +824,7 @@ def edit_prospect(request, pk):
         "initial_lat": initial_lat,
         "initial_lng": initial_lng,
         "initial_zoom": 10 if prospect.geom else 4,
+        "initial_area_geojson": initial_area,
     })
 
 
@@ -867,6 +881,174 @@ def generate_prospect_report(request, pk):
         report.source_documents.set(Document.objects.filter(pk__in=doc_ids))
 
     return redirect("saved_report_editor", report_id=report.pk)
+
+
+# ---------- Prospect–Report Assignment ----------
+
+
+@login_required
+@require_POST
+def assign_report_prospect(request, report_id):
+    """Assign or clear the prospect linked to a saved report."""
+    report = get_object_or_404(SavedReport, pk=report_id)
+    if not request.user.is_superuser:
+        if (
+            hasattr(request.user, 'profile')
+            and request.user.profile.organisation
+            and report.organisation
+            and report.organisation != request.user.profile.organisation
+        ):
+            raise PermissionDenied
+    prospect_id = request.POST.get("prospect_id") or None
+    if prospect_id:
+        report.prospect = Prospect.objects.filter(
+            pk=prospect_id, process=report.process
+        ).first()
+    else:
+        report.prospect = None
+    report.save(update_fields=["prospect"])
+    return JsonResponse({
+        "success": True,
+        "prospect_id": str(report.prospect_id) if report.prospect_id else None,
+    })
+
+
+# ---------- Samples ----------
+
+
+@login_required
+@require_GET
+def samples(request):
+    qs = Sample.objects.filter(_org_qs_filter(request)).select_related("process", "prospect").order_by("-created_at")
+    prospect_id = request.GET.get("prospect")
+    if prospect_id:
+        qs = qs.filter(prospect_id=prospect_id)
+    page = _paginate(qs, request)
+    return render(request, "core/samples.html", {"page": page})
+
+
+@login_required
+@role_required(
+    UserProfile.RoleChoices.GEOLOGIST_EXPL,
+    UserProfile.RoleChoices.FIELD_LEAD,
+    UserProfile.RoleChoices.DATA_MANAGER,
+    UserProfile.RoleChoices.ADMIN,
+)
+@require_http_methods(["GET", "POST"])
+def create_sample(request):
+    org = getattr(getattr(request.user, "profile", None), "organisation", None)
+    if org is None:
+        messages.error(request, "Your account is not linked to an organisation.")
+        return redirect("samples")
+
+    initial_prospect = None
+    prospect_id = request.GET.get("prospect")
+    if prospect_id:
+        initial_prospect = Prospect.objects.filter(pk=prospect_id, organisation=org).first()
+
+    if request.method == "POST":
+        form = SampleForm(request.POST, organisation=org)
+        if form.is_valid():
+            sample = form.save(commit=False)
+            sample.organisation = org
+            sample.save()
+            log_audit(request.user, AuditLog.ActionType.CREATE, sample,
+                      f"Created sample '{sample.name}'",
+                      ip_address=request.META.get("REMOTE_ADDR"))
+            redirect_to = request.POST.get("next") or "sample_detail"
+            if redirect_to == "prospect" and sample.prospect_id:
+                return redirect("prospect_detail", pk=sample.prospect_id)
+            return redirect("sample_detail", pk=sample.pk)
+        return render(request, "core/sample_form.html", {"form": form})
+
+    form = SampleForm(organisation=org, initial_prospect=initial_prospect)
+    return render(request, "core/sample_form.html", {"form": form, "initial_prospect": initial_prospect})
+
+
+@login_required
+@require_GET
+def sample_detail(request, pk):
+    sample = get_object_or_404(Sample, pk=pk)
+    if not request.user.is_superuser:
+        if (
+            hasattr(request.user, 'profile')
+            and request.user.profile.organisation
+            and sample.organisation != request.user.profile.organisation
+        ):
+            raise PermissionDenied
+    return render(request, "core/sample_detail.html", {"sample": sample})
+
+
+# ---------- Surveys ----------
+
+
+@login_required
+@require_GET
+def surveys(request):
+    qs = Survey.objects.filter(_org_qs_filter(request)).select_related("process", "prospect").order_by("-created_at")
+    prospect_id = request.GET.get("prospect")
+    if prospect_id:
+        qs = qs.filter(prospect_id=prospect_id)
+    page = _paginate(qs, request)
+    return render(request, "core/surveys.html", {"page": page})
+
+
+@login_required
+@role_required(
+    UserProfile.RoleChoices.GEOLOGIST_EXPL,
+    UserProfile.RoleChoices.FIELD_LEAD,
+    UserProfile.RoleChoices.DATA_MANAGER,
+    UserProfile.RoleChoices.ADMIN,
+)
+@require_http_methods(["GET", "POST"])
+def create_survey(request):
+    org = getattr(getattr(request.user, "profile", None), "organisation", None)
+    if org is None:
+        messages.error(request, "Your account is not linked to an organisation.")
+        return redirect("surveys")
+
+    initial_prospect = None
+    prospect_id = request.GET.get("prospect")
+    if prospect_id:
+        initial_prospect = Prospect.objects.filter(pk=prospect_id, organisation=org).first()
+
+    if request.method == "POST":
+        form = SurveyForm(request.POST, organisation=org)
+        if form.is_valid():
+            survey = form.save(commit=False)
+            survey.organisation = org
+            survey.save()
+            log_audit(request.user, AuditLog.ActionType.CREATE, survey,
+                      f"Created survey '{survey.name}'",
+                      ip_address=request.META.get("REMOTE_ADDR"))
+            if survey.prospect_id:
+                return redirect("prospect_detail", pk=survey.prospect_id)
+            return redirect("survey_detail", pk=survey.pk)
+        return render(request, "core/survey_form.html", {"form": form})
+
+    form = SurveyForm(organisation=org, initial_prospect=initial_prospect)
+    return render(request, "core/survey_form.html", {"form": form, "initial_prospect": initial_prospect})
+
+
+@login_required
+@require_GET
+def survey_detail(request, pk):
+    survey = get_object_or_404(Survey, pk=pk)
+    if not request.user.is_superuser:
+        if (
+            hasattr(request.user, 'profile')
+            and request.user.profile.organisation
+            and survey.organisation != request.user.profile.organisation
+        ):
+            raise PermissionDenied
+    area_geom_geojson = "null"
+    if survey.geom:
+        import json
+        area_geom_geojson = json.dumps(json.loads(survey.geom.geojson))
+    return render(request, "core/survey_detail.html", {
+        "survey": survey,
+        "area_geom_geojson": area_geom_geojson,
+    })
 
 
 # ---------- DocLink Views ----------
@@ -1514,28 +1696,32 @@ def geojson_tenements(request):
 @require_GET
 def geojson_prospects(request):
     """
-    GeoJSON endpoint for Prospect locations
-    Returns all prospects with geometry 
+    GeoJSON endpoint for Prospect locations.
+    Includes area_geom (polygon) in properties when present.
     """
-    from django.core.serializers import serialize
-    from .models import Prospect
+    import json
 
     prospects = Prospect.objects.filter(
         _org_qs_filter(request), geom__isnull=False
     ).select_related('organisation', 'process')
 
-    if not prospects.exists():
-        return JsonResponse({"type": "FeatureCollection", "features": []})
+    features = []
+    for p in prospects:
+        props = {
+            "pk": str(p.pk),
+            "name": p.name,
+            "organisation": str(p.organisation) if p.organisation else None,
+            "process": str(p.process) if p.process else None,
+        }
+        if p.area_geom:
+            props["area_geom_geojson"] = json.loads(p.area_geom.geojson)
+        features.append({
+            "type": "Feature",
+            "geometry": json.loads(p.geom.geojson),
+            "properties": props,
+        })
 
-    geojson_data = serialize(
-        'geojson',
-        prospects,
-        geometry_field='geom',
-        fields=('name', 'organisation', 'process')
-    )
-
-    import json
-    return JsonResponse(json.loads(geojson_data), safe=False)
+    return JsonResponse({"type": "FeatureCollection", "features": features})
 
 
 @login_required
@@ -1676,12 +1862,25 @@ def report_list_page(request):
 
     accessible_levels = [lvl for lvl, rank in clearance_rank.items() if rank <= user_rank]
     org_filter = _org_qs_filter(request)
-    recent_reports = (
+    q = request.GET.get("q", "").strip()
+
+    base_qs = (
         SavedReport.objects
         .filter(org_filter, clearance_level__in=accessible_levels)
         .select_related("process")
-        .order_by("-created_at")[:20]
     )
+
+    if q:
+        sq = SearchQuery(q, search_type="websearch")
+        recent_reports = (
+            base_qs
+            .annotate(rank=SearchRank("search_tsv", sq))
+            .filter(Q(search_tsv=sq) | Q(title__icontains=q))
+            .order_by("-rank", "-created_at")[:20]
+        )
+    else:
+        recent_reports = base_qs.order_by("-created_at")[:20]
+
     recent_projects = Process.objects.filter(org_filter).order_by("-created_at")[:20]
     all_documents = Document.objects.filter(org_filter, is_latest=True).select_related("process").order_by("-created_at")
 
@@ -1689,6 +1888,7 @@ def report_list_page(request):
         "recent_reports":  recent_reports,
         "recent_projects": recent_projects,
         "all_documents":   all_documents,
+        "q":               q,
     })
 
 
@@ -1817,6 +2017,11 @@ def saved_report_editor(request, report_id):
     if clearance_rank.get(user_clearance, 0) < clearance_rank.get(report.clearance_level, 1):
         raise PermissionDenied
 
+    process_prospects = (
+        Prospect.objects.filter(process=report.process).order_by("name")
+        if report.process else []
+    )
+
     return render(request, "core/report_editor.html", {
         "process": report.process,
         "markdown_content": report.content_md,
@@ -1824,6 +2029,7 @@ def saved_report_editor(request, report_id):
         "saved_report": report,
         "save_url": reverse("update_saved_report", kwargs={"report_id": report_id}),
         "export_url": reverse("export_report"),
+        "process_prospects": process_prospects,
     })
 
 
@@ -2127,16 +2333,27 @@ def report_version_detail(request, report_id):
 @login_required
 @require_GET
 def all_reports_history(request):
-    """Show all saved reports grouped by project."""
-    from itertools import groupby
-
+    """Show all saved reports grouped by project, with optional full-text search."""
     org_filter = _org_qs_filter(request)
+    q = request.GET.get("q", "").strip()
+
     reports = (
         SavedReport.objects
         .filter(org_filter)
-        .select_related("process")
+        .select_related("process", "created_by")
         .order_by("process__name", "title", "-version_number")
     )
+
+    if q:
+        sq = SearchQuery(q, search_type="websearch")
+        reports = (
+            reports
+            .annotate(rank=SearchRank("search_tsv", sq))
+            .filter(Q(search_tsv=sq) | Q(title__icontains=q))
+            .order_by("-rank", "-created_at")
+        )
+
+    total = reports.count() if q else None
 
     grouped = {}
     for report in reports:
@@ -2145,10 +2362,14 @@ def all_reports_history(request):
         if project_name not in grouped:
             grouped[project_name] = {"process_id": process_id, "titles": {}}
         if report.title not in grouped[project_name]["titles"]:
-             grouped[project_name]["titles"][report.title] = []
+            grouped[project_name]["titles"][report.title] = []
         grouped[project_name]["titles"][report.title].append(report)
 
-    return render(request, "core/all_reports_history.html", {"grouped": grouped})
+    return render(request, "core/all_reports_history.html", {
+        "grouped": grouped,
+        "q": q,
+        "total": total,
+    })
 
 
 @login_required

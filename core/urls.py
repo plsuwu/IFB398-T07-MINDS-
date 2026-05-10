@@ -64,6 +64,19 @@ urlpatterns = [
     path("ai/reports/save/", views.save_report, name="save_report"),
     path("ai/reports/<uuid:report_id>/update/",  views.update_saved_report,       name="update_saved_report"),
 
+    # Prospect–Report assignment
+    path("ai/reports/<uuid:report_id>/assign-prospect/", views.assign_report_prospect, name="assign_report_prospect"),
+
+    # Samples
+    path("samples/",             views.samples,        name="samples"),
+    path("samples/new/",         views.create_sample,  name="create_sample"),
+    path("samples/<uuid:pk>/",   views.sample_detail,  name="sample_detail"),
+
+    # Surveys
+    path("surveys/",             views.surveys,        name="surveys"),
+    path("surveys/new/",         views.create_survey,  name="create_survey"),
+    path("surveys/<uuid:pk>/",   views.survey_detail,  name="survey_detail"),
+
     # JORC Approval Workflow
     path("ai/reports/<uuid:report_id>/submit/",  views.submit_report_for_review,  name="submit_report_for_review"),
     path("ai/reports/<uuid:report_id>/approve/", views.approve_report,             name="approve_report"),

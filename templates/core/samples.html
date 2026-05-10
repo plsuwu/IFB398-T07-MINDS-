@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-3xl font-bold">Samples</h1>
+    <p class="text-gray-500 text-sm mt-1">Field samples collected across all prospects</p>
+  </div>
+  <a href="{% url 'create_sample' %}"
+     class="px-4 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700">
+    + New Sample
+  </a>
+</div>
+
+<div class="bg-white rounded-xl shadow overflow-hidden">
+  {% if page.object_list %}
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-left text-xs text-gray-500 uppercase tracking-wide border-b">
+        <tr>
+          <th class="px-4 py-3">Sample</th>
+          <th class="px-4 py-3">Type</th>
+          <th class="px-4 py-3">Project</th>
+          <th class="px-4 py-3">Prospect</th>
+          <th class="px-4 py-3">Collected</th>
+          <th class="px-4 py-3">Lab</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for sample in page.object_list %}
+        <tr class="hover:bg-gray-50 transition">
+          <td class="px-4 py-3 font-medium">
+            <a href="{% url 'sample_detail' sample.pk %}" class="text-cyan-700 hover:underline">{{ sample.name }}</a>
+            {% if sample.sample_number %}
+              <span class="ml-1 text-gray-400 text-xs">#{{ sample.sample_number }}</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-gray-600">{{ sample.get_sample_type_display|default:"—" }}</td>
+          <td class="px-4 py-3 text-gray-600">{{ sample.process.name|default:"—" }}</td>
+          <td class="px-4 py-3 text-gray-600">
+            {% if sample.prospect %}
+              <a href="{% url 'prospect_detail' sample.prospect.pk %}" class="text-cyan-600 hover:underline">{{ sample.prospect.name }}</a>
+            {% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-gray-500">{{ sample.collected_at|date:"M d, Y"|default:"—" }}</td>
+          <td class="px-4 py-3 text-gray-500">{{ sample.laboratory|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Pagination -->
+    {% if page.has_other_pages %}
+    <div class="flex items-center justify-between px-4 py-3 border-t text-sm text-gray-500">
+      <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      <div class="flex gap-2">
+        {% if page.has_previous %}
+          <a href="?page={{ page.previous_page_number }}" class="px-3 py-1 border rounded hover:bg-gray-50">Previous</a>
+        {% endif %}
+        {% if page.has_next %}
+          <a href="?page={{ page.next_page_number }}" class="px-3 py-1 border rounded hover:bg-gray-50">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+  {% else %}
+    <div class="px-6 py-12 text-center text-gray-400">
+      <p class="text-lg font-medium mb-2">No samples yet</p>
+      <p class="text-sm mb-4">Record field samples to build your data trail.</p>
+      <a href="{% url 'create_sample' %}" class="px-4 py-2 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700">
+        Create First Sample
+      </a>
+    </div>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block head_extra %}
+<link href="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<div class="mb-4 text-sm text-gray-600">
+  <a href="{% url 'surveys' %}" class="hover:text-cyan-600">Surveys</a>
+  <span class="mx-2">/</span>
+  <span class="text-gray-900">New Survey</span>
+</div>
+
+<div class="max-w-2xl">
+  <h1 class="text-3xl font-bold mb-6">Create Survey</h1>
+
+  <div class="bg-white rounded-xl shadow p-6">
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          {% for error in form.non_field_errors %}<p class="text-red-600 text-sm">{{ error }}</p>{% endfor %}
+        </div>
+      {% endif %}
+
+      <!-- Name -->
+      <div class="mb-5">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Survey Name <span class="text-red-500">*</span></label>
+        {{ form.name }}
+        {% for e in form.name.errors %}<p class="text-red-600 text-sm mt-1">{{ e }}</p>{% endfor %}
+      </div>
+
+      <!-- Project -->
+      <div class="mb-5">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Project <span class="text-red-500">*</span></label>
+        {{ form.process }}
+        {% for e in form.process.errors %}<p class="text-red-600 text-sm mt-1">{{ e }}</p>{% endfor %}
+      </div>
+
+      <!-- Prospect -->
+      <div class="mb-5">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Prospect</label>
+        {{ form.prospect }}
+      </div>
+
+      <!-- Type + Contractor (2-col) -->
+      <div class="mb-5 grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Survey Type</label>
+          {{ form.survey_type }}
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Contractor</label>
+          {{ form.contractor }}
+        </div>
+      </div>
+
+      <!-- Dates (2-col) -->
+      <div class="mb-5 grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Date From</label>
+          {{ form.date_from }}
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Date To</label>
+          {{ form.date_to }}
+        </div>
+      </div>
+
+      <!-- Description -->
+      <div class="mb-5">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        {{ form.description }}
+      </div>
+
+      <!-- Coverage area map -->
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          Coverage Area
+          <span class="font-normal text-gray-500">— optional polygon showing the survey extent</span>
+        </label>
+
+        <div class="flex gap-2 mb-2">
+          <button type="button" id="btn-start-draw" onclick="startDraw()"
+                  class="px-3 py-1.5 text-sm font-medium text-white bg-cyan-600 rounded-lg hover:bg-cyan-700">
+            Draw Coverage Area
+          </button>
+          <button type="button" id="btn-finish-draw" onclick="finishDraw()"
+                  class="hidden px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700">
+            Finish Area
+          </button>
+          <button type="button" id="btn-cancel-draw" onclick="cancelDraw()"
+                  class="hidden px-3 py-1.5 text-sm font-medium text-white bg-yellow-500 rounded-lg hover:bg-yellow-600">
+            Cancel
+          </button>
+          <button type="button" id="btn-clear-geom" onclick="clearGeom()"
+                  class="hidden px-3 py-1.5 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600">
+            Clear
+          </button>
+        </div>
+
+        <p id="draw-hint" class="hidden text-xs text-cyan-700 mb-2">
+          Click on the map to add points. Click <strong>Finish Area</strong> when done (min. 3 points).
+        </p>
+
+        <div id="survey-map" class="rounded-lg border border-gray-300" style="height: 320px;"></div>
+        <p id="geom-status" class="text-sm text-gray-500 mt-2">No coverage area drawn</p>
+
+        {{ form.geom_geojson }}
+        {% for e in form.geom_geojson.errors %}<p class="text-red-600 text-sm mt-1">{{ e }}</p>{% endfor %}
+      </div>
+
+      <div class="flex items-center gap-4">
+        <button type="submit"
+                class="px-6 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700">
+          Save Survey
+        </button>
+        {% if initial_prospect %}
+          <a href="{% url 'prospect_detail' initial_prospect.pk %}" class="text-sm text-gray-500 hover:text-gray-700">Cancel</a>
+        {% else %}
+          <a href="{% url 'surveys' %}" class="text-sm text-gray-500 hover:text-gray-700">Cancel</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const map = new maplibregl.Map({
+    container: 'survey-map',
+    style: {
+        version: 8,
+        sources: {
+            'satellite': { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: '© Esri' },
+            'labels':    { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 }
+        },
+        layers: [
+            { id: 'satellite-layer', type: 'raster', source: 'satellite', minzoom: 0, maxzoom: 22 },
+            { id: 'labels-layer',    type: 'raster', source: 'labels',    minzoom: 0, maxzoom: 22 }
+        ]
+    },
+    center: [133.7751, -25.2744],
+    zoom: 4
+});
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+let isDrawing = false;
+let drawPoints = [];
+
+map.on('click', (e) => { if (!isDrawing) return; drawPoints.push([e.lngLat.lng, e.lngLat.lat]); updateDrawLayer(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isDrawing) cancelDraw(); });
+
+function startDraw() {
+    isDrawing = true; drawPoints = [];
+    map.getCanvas().style.cursor = 'crosshair';
+    document.getElementById('btn-start-draw').classList.add('hidden');
+    document.getElementById('btn-finish-draw').classList.remove('hidden');
+    document.getElementById('btn-cancel-draw').classList.remove('hidden');
+    document.getElementById('btn-clear-geom').classList.add('hidden');
+    document.getElementById('draw-hint').classList.remove('hidden');
+}
+
+function finishDraw() {
+    if (drawPoints.length < 3) { alert('Add at least 3 points before finishing.'); return; }
+    isDrawing = false;
+    map.getCanvas().style.cursor = '';
+    document.getElementById('btn-finish-draw').classList.add('hidden');
+    document.getElementById('btn-cancel-draw').classList.add('hidden');
+    document.getElementById('btn-start-draw').classList.remove('hidden');
+    document.getElementById('btn-clear-geom').classList.remove('hidden');
+    document.getElementById('draw-hint').classList.add('hidden');
+    const ring = [...drawPoints, drawPoints[0]];
+    document.getElementById('id_geom_geojson').value = JSON.stringify({ type: 'Polygon', coordinates: [ring] });
+    document.getElementById('geom-status').textContent = 'Coverage area drawn — submit to save.';
+    if (map.getSource('draw-source')) {
+        map.getSource('draw-source').setData({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: {} }] });
+    }
+    drawPoints = [];
+}
+
+function cancelDraw() {
+    isDrawing = false; drawPoints = [];
+    map.getCanvas().style.cursor = '';
+    document.getElementById('btn-start-draw').classList.remove('hidden');
+    document.getElementById('btn-finish-draw').classList.add('hidden');
+    document.getElementById('btn-cancel-draw').classList.add('hidden');
+    document.getElementById('draw-hint').classList.add('hidden');
+    updateDrawLayer();
+}
+
+function clearGeom() {
+    drawPoints = [];
+    document.getElementById('id_geom_geojson').value = '';
+    document.getElementById('geom-status').textContent = 'No coverage area drawn.';
+    document.getElementById('btn-clear-geom').classList.add('hidden');
+    if (map.getSource('geom-source')) map.getSource('geom-source').setData({ type: 'FeatureCollection', features: [] });
+    if (map.getSource('draw-source')) map.getSource('draw-source').setData({ type: 'FeatureCollection', features: [] });
+}
+
+function updateDrawLayer() {
+    if (!map.getSource('draw-source')) return;
+    const features = [];
+    drawPoints.forEach(pt => features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: pt }, properties: {} }));
+    if (drawPoints.length > 1) features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: drawPoints }, properties: {} });
+    map.getSource('draw-source').setData({ type: 'FeatureCollection', features });
+}
+
+map.on('load', () => {
+    map.addSource('geom-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'geom-fill',    type: 'fill', source: 'geom-source', paint: { 'fill-color': '#06b6d4', 'fill-opacity': 0.2 } });
+    map.addLayer({ id: 'geom-outline', type: 'line', source: 'geom-source', paint: { 'line-color': '#06b6d4', 'line-width': 2 } });
+
+    map.addSource('draw-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'draw-fill',   type: 'fill',   source: 'draw-source', filter: ['==', '$type', 'Polygon'],    paint: { 'fill-color': '#06b6d4', 'fill-opacity': 0.1 } });
+    map.addLayer({ id: 'draw-line',   type: 'line',   source: 'draw-source', filter: ['any', ['==', '$type', 'LineString'], ['==', '$type', 'Polygon']], paint: { 'line-color': '#06b6d4', 'line-width': 2, 'line-dasharray': [3, 1] } });
+    map.addLayer({ id: 'draw-points', type: 'circle', source: 'draw-source', filter: ['==', '$type', 'Point'],      paint: { 'circle-radius': 5, 'circle-color': '#06b6d4', 'circle-stroke-width': 2, 'circle-stroke-color': '#ffffff' } });
+});
+</script>
+
+{% endblock %}
